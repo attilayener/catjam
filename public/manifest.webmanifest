@@ -1,0 +1,12 @@
+{
+  "name": "Cat Jam Notes",
+  "short_name": "Cat Jam",
+  "description": "Minimalist markdown notebook (Obsidian-style)",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#111214",
+  "theme_color": "#111214",
+  "icons": [
+    { "src": "/vite.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

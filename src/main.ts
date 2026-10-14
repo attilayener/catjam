@@ -1,10 +1,11 @@
 import './style.css';
 import { initStore, getState, subscribe, createNote, updateNote, deleteNote, setActive, setSearch, setTheme, setEditorMode, getActiveNote, backlinksOf, findNoteByTitle, filteredNotes, openVault } from './store';
-import { renderMarkdown, extractWikiLinks } from './markdown';
+import { renderMarkdown, extractWikiLinks, extractTags } from './markdown';
 import { THEMES } from './themes';
 import { saveSetting } from './db';
 
 let saveTimer: any = null;
+let propsTimer: any = null;
 let currentView: 'editor' | 'graph' = 'editor';
 
 
@@ -22,6 +23,8 @@ function buildShell() {
     <button class="iconbtn" id="btnBacklinks" title="Backlinks">↔</button>
     <button class="iconbtn" id="btnGraph" title="Graph view">⬢</button>
     <button class="iconbtn" id="btnPalette" title="Command palette (Ctrl+P)">⌘</button>
+    <button class="iconbtn" id="btnTasks" title="Tasks">☑</button>
+    <button class="iconbtn" id="btnTags" title="Tags">#</button>
     <button class="iconbtn" id="btnSettings" title="Settings">⚙</button>
   `;
   app.appendChild(tb);
@@ -64,7 +67,9 @@ function buildShell() {
         <button data-mode="split">Split</button>
       </div>
       <button class="iconbtn" id="btnDelete" title="Delete note">🗑</button>
+      <button class="iconbtn" id="btnProps" title="Properties" style="width:auto;padding:4px 8px;font-size:12px;">Props</button>
     </div>
+    <div id="propsPanel" style="display:none;padding:8px 12px;border-bottom:1px solid var(--border);background:var(--panel);"></div>
     <div class="editor-body" id="editorBody">
       <div class="editor-pane" id="editorPane">
         <textarea class="editor-textarea" id="editorTextarea" placeholder="Start writing… Use [[Wiki Links]] and #tags"></textarea>
@@ -90,7 +95,19 @@ function buildShell() {
   const side = document.createElement('div');
   side.className = 'side-panel';
   side.id = 'sidePanel';
-  side.innerHTML = `<h3>Backlinks</h3><div id="backlinksList"></div><h3 style="margin-top:16px;">Outgoing links</h3><div id="outgoingList"></div>`;
+  side.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+      <h3 style="margin:0;">Backlinks</h3>
+      <button class="iconbtn" id="closeSidePanel" title="Close">✕</button>
+    </div>
+    <div id="backlinksList"></div>
+    <h3 style="margin-top:16px;">Outline</h3>
+    <div id="outlineList"></div>
+    <h3 style="margin-top:16px;">Outgoing links</h3>
+    <div id="outgoingList"></div>
+    <h3 style="margin-top:16px;">Tags</h3>
+    <div id="tagsList"></div>
+  `;
   app.appendChild(side);
 
   bindEvents();
@@ -111,14 +128,22 @@ function bindEvents() {
     if (ok) renderAll(); else alert('Vault açılamadı veya iptal edildi.');
   });
   document.getElementById('btnBacklinks')!.addEventListener('click', () => toggleSidePanel());
+  document.getElementById('closeSidePanel')!.addEventListener('click', () => toggleSidePanel());
   document.getElementById('btnGraph')!.addEventListener('click', () => showGraph());
   document.getElementById('btnPalette')!.addEventListener('click', () => openCommandPalette());
+  document.getElementById('btnTasks')!.addEventListener('click', () => openTasksModal());
+  document.getElementById('btnTags')!.addEventListener('click', () => openTagsModal());
   document.getElementById('btnSettings')!.addEventListener('click', () => openSettings());
   document.getElementById('btnDelete')!.addEventListener('click', async () => {
     const n = getActiveNote(); if (!n) return;
     if (!confirm(`Delete "${n.title}"?`)) return;
     await deleteNote(n.id);
     renderAll();
+  });
+  document.getElementById('btnProps')!.addEventListener('click', () => {
+    const p = document.getElementById('propsPanel')!;
+    if (p.style.display === 'none') { p.style.display = ''; renderProps(); }
+    else p.style.display = 'none';
   });
 
   const searchInput = document.getElementById('searchInput') as HTMLInputElement;
@@ -172,7 +197,9 @@ function toggleSidebar(open: boolean) {
   document.getElementById('sidebarBackdrop')!.classList.toggle('open', open);
 }
 function toggleSidePanel() {
-  document.getElementById('sidePanel')!.classList.toggle('open');
+  const panel = document.getElementById('sidePanel')!;
+  panel.classList.toggle('open');
+  document.getElementById('btnBacklinks')!.classList.toggle('active', panel.classList.contains('open'));
   renderSidePanel();
 }
 
@@ -257,15 +284,60 @@ function renderEditor() {
   document.querySelectorAll('#modeToggle button').forEach((b) => b.classList.toggle('active', (b as HTMLElement).dataset.mode === mode));
   applyMode(mode);
   renderSidePanel();
+  const pp = document.getElementById('propsPanel');
+  if (pp && pp.style.display !== 'none') renderProps();
 }
 
 function renderSidePanel() {
   const n = getActiveNote();
   const bl = document.getElementById('backlinksList')!;
   const ol = document.getElementById('outgoingList')!;
-  bl.innerHTML = ''; ol.innerHTML = '';
+  const tl = document.getElementById('tagsList')!;
+  const outl = document.getElementById('outlineList')!;
+  bl.innerHTML = ''; ol.innerHTML = ''; tl.innerHTML = ''; outl.innerHTML = '';
   if (!n) return;
   const links = extractWikiLinks(n.content);
+  // outline
+  const headingItems: { level: number; text: string; id: string }[] = [];
+  {
+    const re = /^(#{1,6})\\s+(.+)$/gm;
+    let i = 0;
+    let mm: RegExpExecArray | null;
+    while ((mm = re.exec(n.content))) {
+      const text = mm[2].trim();
+      const slug = text.toLowerCase().replace(/[^\\w]+/g, '-').replace(/^-|-$/g, '') || 'heading';
+      headingItems.push({ level: mm[1].length, text, id: 'h-' + slug + '-' + i });
+      i++;
+    }
+  }
+  if (!headingItems.length) {
+    outl.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">None</div>';
+  } else {
+    for (const h of headingItems) {
+      const item = document.createElement('div');
+      item.className = 'backlink-item';
+      item.style.paddingLeft = (h.level - 1) * 10 + 8 + 'px';
+      item.textContent = h.text;
+      item.addEventListener('click', () => {
+        const target = document.getElementById(h.id);
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        // also scroll textarea to heading line
+        const ta = document.getElementById('editorTextarea') as HTMLTextAreaElement;
+        const idx = n.content.split('\\n').findIndex((l) => l.trim() === '#'.repeat(h.level) + ' ' + h.text || l.trim().startsWith('#'.repeat(h.level) + ' ' + h.text));
+        if (idx >= 0) {
+          const lines = n.content.split('\\n');
+          let pos = 0;
+          for (let i = 0; i < idx; i++) pos += lines[i].length + 1;
+          ta.focus();
+          ta.selectionStart = ta.selectionEnd = pos;
+          // scroll textarea
+          const lineHeight = 20;
+          ta.scrollTop = idx * lineHeight;
+        }
+      });
+      outl.appendChild(item);
+    }
+  }
   // outgoing
   for (const l of links) {
     const target = findNoteByTitle(l);
@@ -286,6 +358,28 @@ function renderSidePanel() {
     bl.appendChild(item);
   }
   if (!bls.length) bl.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">None</div>';
+  // tags
+  const tags = extractTags(n.content);
+  if (!tags.length) {
+    tl.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">None</div>';
+  } else {
+    const wrap = document.createElement('div');
+    wrap.style.display = 'flex';
+    wrap.style.flexWrap = 'wrap';
+    wrap.style.gap = '6px';
+    for (const t of tags) {
+      const chip = document.createElement('button');
+      chip.className = 'iconbtn';
+      chip.style.width = 'auto';
+      chip.style.height = 'auto';
+      chip.style.padding = '2px 8px';
+      chip.style.fontSize = '12px';
+      chip.textContent = '#' + t;
+      chip.addEventListener('click', () => { setSearch('#' + t); (document.getElementById('searchInput') as HTMLInputElement).value = '#' + t; renderNoteList(); });
+      wrap.appendChild(chip);
+    }
+    tl.appendChild(wrap);
+  }
 }
 
 function renderAll() {
@@ -532,6 +626,8 @@ function globalKeydown(e: KeyboardEvent) {
   if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); quickSwitcher(); }
   if (e.key === 'Escape') {
     document.querySelectorAll('.modal-backdrop,.cmd-backdrop').forEach((el) => el.remove());
+    const sp = document.getElementById('sidePanel');
+    if (sp && sp.classList.contains('open')) toggleSidePanel();
   }
 }
 function quickSwitcher() {
@@ -553,7 +649,272 @@ subscribe(() => {
     if (ti && document.activeElement !== ti) ti.value = n.title;
     updatePreview(n.content);
   }
+  // refresh side panel if visible (backlinks/outgoing links may change)
+  const sp = document.getElementById('sidePanel');
+  if (sp && sp.classList.contains('open')) renderSidePanel();
 });
+
+function openTasksModal() {
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop';
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.style.maxWidth = '640px';
+  modal.innerHTML = `
+    <h3>Tasks</h3>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+      <button class="iconbtn" data-taskfilter="all" style="width:auto;height:auto;padding:4px 10px;font-size:12px;">All</button>
+      <button class="iconbtn" data-taskfilter="active" style="width:auto;height:auto;padding:4px 10px;font-size:12px;">Active</button>
+      <button class="iconbtn" data-taskfilter="done" style="width:auto;height:auto;padding:4px 10px;font-size:12px;">Done</button>
+    </div>
+    <div id="tasksList" style="max-height:50vh;overflow:auto;"></div>
+  `;
+  backdrop.appendChild(modal);
+  document.body.appendChild(backdrop);
+  let filter = 'all';
+  const listEl = modal.querySelector('#tasksList') as HTMLDivElement;
+
+  function collect() {
+    const out: { noteId: string; noteTitle: string; lineIndex: number; done: boolean; text: string }[] = [];
+    for (const note of getState().notes) {
+      const lines = note.content.split('\n');
+      lines.forEach((line, idx) => {
+        const m = line.match(/^([\t ]*[-*+] \[)([ xX])(\] .*)$/);
+        if (m) {
+          out.push({ noteId: note.id, noteTitle: note.title, lineIndex: idx, done: m[2].toLowerCase() === 'x', text: m[3].slice(2).trim() || m[3].trim() });
+        }
+      });
+    }
+    return out;
+  }
+
+  function render() {
+    const tasks = collect().filter((t) => (filter === 'all' ? true : filter === 'active' ? !t.done : t.done));
+    listEl.innerHTML = '';
+    if (!tasks.length) { listEl.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">No tasks.</div>'; return; }
+    for (const t of tasks) {
+      const row = document.createElement('div');
+      row.style.display = 'flex';
+      row.style.alignItems = 'center';
+      row.style.gap = '8px';
+      row.style.padding = '6px 4px';
+      row.style.borderBottom = '1px solid var(--border)';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = t.done;
+      cb.addEventListener('change', async () => {
+        const note = getState().notes.find((n) => n.id === t.noteId);
+        if (!note) return;
+        const lines = note.content.split('\n');
+        const mm = lines[t.lineIndex]?.match(/^([\t ]*[-*+] \[)([ xX])(\].*)$/);
+        if (!mm) return;
+        lines[t.lineIndex] = `${mm[1]}${cb.checked ? 'x' : ' '}${mm[3]}`;
+        await updateNote(note.id, { content: lines.join('\n') });
+        render();
+      });
+      const text = document.createElement('span');
+      text.style.flex = '1';
+      text.style.color = t.done ? 'var(--text-muted)' : 'var(--text)';
+      text.style.textDecoration = t.done ? 'line-through' : 'none';
+      text.textContent = t.text;
+      const title = document.createElement('span');
+      title.style.color = 'var(--text-muted)';
+      title.style.fontSize = '12px';
+      title.style.cursor = 'pointer';
+      title.textContent = t.noteTitle;
+      title.addEventListener('click', () => { setActive(t.noteId); renderAll(); backdrop.remove(); });
+      row.appendChild(cb);
+      row.appendChild(text);
+      row.appendChild(title);
+      listEl.appendChild(row);
+    }
+  }
+
+  modal.querySelectorAll('[data-taskfilter]').forEach((b) => {
+    (b as HTMLElement).addEventListener('click', () => {
+      filter = (b as HTMLElement).dataset.taskfilter!;
+      modal.querySelectorAll('[data-taskfilter]').forEach((x) => x.classList.remove('active'));
+      (b as HTMLElement).classList.add('active');
+      render();
+    });
+  });
+  modal.querySelector('[data-taskfilter="all"]')!.classList.add('active');
+  render();
+
+  modal.querySelector('#tasksList')?.parentElement;
+  // add close at bottom
+  const footer = document.createElement('div');
+  footer.style.display = 'flex';
+  footer.style.justifyContent = 'flex-end';
+  footer.style.marginTop = '10px';
+  const close = document.createElement('button');
+  close.className = 'iconbtn';
+  close.style.width = 'auto';
+  close.style.padding = '4px 12px';
+  close.textContent = 'Close';
+  close.addEventListener('click', () => backdrop.remove());
+  footer.appendChild(close);
+  modal.appendChild(footer);
+
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+}
+
+function openTagsModal() {
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop';
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.innerHTML = '<h3>Tags</h3><div id="tagsModalList" style="max-height:60vh;overflow:auto;"></div>';
+  backdrop.appendChild(modal);
+  document.body.appendChild(backdrop);
+  const list = modal.querySelector('#tagsModalList') as HTMLDivElement;
+  // collect
+  const counts = new Map<string, number>();
+  const notesByTag = new Map<string, string[]>();
+  for (const note of getState().notes) {
+    for (const t of extractTags(note.content)) {
+      counts.set(t, (counts.get(t) ?? 0) + 1);
+      const arr = notesByTag.get(t) ?? [];
+      arr.push(note.id);
+      notesByTag.set(t, arr);
+    }
+  }
+  const tags = [...counts.keys()].sort();
+  if (!tags.length) { list.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">No tags found.</div>'; }
+  else {
+    for (const t of tags) {
+      const row = document.createElement('div');
+      row.className = 'backlink-item';
+      row.style.display = 'flex';
+      row.style.justifyContent = 'space-between';
+      row.innerHTML = `<span>#${escapeHtml(t)}</span><span style="color:var(--text-muted);font-size:12px;">${counts.get(t)}</span>`;
+      row.addEventListener('click', () => {
+        setSearch('#' + t);
+        (document.getElementById('searchInput') as HTMLInputElement).value = '#' + t;
+        renderNoteList();
+        backdrop.remove();
+      });
+      list.appendChild(row);
+    }
+  }
+  const footer = document.createElement('div');
+  footer.style.display = 'flex';
+  footer.style.justifyContent = 'flex-end';
+  footer.style.marginTop = '10px';
+  const close = document.createElement('button');
+  close.className = 'iconbtn';
+  close.style.width = 'auto';
+  close.style.padding = '4px 12px';
+  close.textContent = 'Close';
+  close.addEventListener('click', () => backdrop.remove());
+  footer.appendChild(close);
+  modal.appendChild(footer);
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+}
+
+function parseFrontMatter(content: string): { meta: Record<string, any>; body: string; has: boolean } {
+  const m = content.match(/^---\\r?\\n([\\s\\S]*?)\\r?\\n---\\r?\\n?/);
+  if (!m) return { meta: {}, body: content, has: false };
+  const meta: Record<string, any> = {};
+  for (const line of m[1].split('\\n')) {
+    if (!line.trim() || line.trim().startsWith('#')) continue;
+    const idx = line.indexOf(':');
+    if (idx < 0) continue;
+    const key = line.slice(0, idx).trim();
+    let val = line.slice(idx + 1).trim();
+    if (!key || val === '') { if (key) meta[key] = ''; continue; }
+    if (val.startsWith('[')) {
+      try { meta[key] = JSON.parse(val.replace(/'/g, '"')); } catch { meta[key] = val; }
+    } else if (val === 'true') {
+      meta[key] = true;
+    } else if (val === 'false') {
+      meta[key] = false;
+    } else if (!isNaN(Number(val))) {
+      meta[key] = Number(val);
+    } else {
+      meta[key] = val.replace(/^['"]|['"]$/g, '');
+    }
+  }
+  return { meta, body: content.slice(m[0].length), has: true };
+}
+
+function serializeFrontMatter(meta: Record<string, any>): string {
+  const lines = Object.entries(meta).map(([k, v]) => {
+    if (Array.isArray(v)) return `${k}: [${v.map((x) => (typeof x === 'string' ? JSON.stringify(x) : x)).join(', ')}]`;
+    if (typeof v === 'string') return `${k}: ${JSON.stringify(v)}`;
+    return `${k}: ${v}`;
+  });
+  return `---\\n${lines.join('\\n')}\\n---\\n\\n`;
+}
+
+function updatePropsContent(meta: Record<string, any>, body: string) {
+  const n = getActiveNote(); if (!n) return;
+  const panel = document.getElementById('propsPanel')!;
+  const hasProps = Object.keys(meta).length > 0;
+  const fm = hasProps ? serializeFrontMatter(meta) : '';
+  const content = fm + body;
+  panel.dataset.body = body;
+  const ta = document.getElementById('editorTextarea') as HTMLTextAreaElement;
+  if (ta && document.activeElement !== ta) ta.value = content;
+  clearTimeout(propsTimer);
+  propsTimer = setTimeout(() => updateNote(n.id, { content }), 300);
+}
+
+function renderProps() {
+  const panel = document.getElementById('propsPanel')!;
+  const n = getActiveNote();
+  panel.innerHTML = '';
+  if (!n) return;
+  const { meta, body } = parseFrontMatter(n.content);
+  panel.dataset.body = body;
+  for (const [k, v] of Object.entries(meta)) {
+    const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.gap = '6px';
+    row.style.alignItems = 'center';
+    row.style.marginBottom = '4px';
+    const label = document.createElement('span');
+    label.textContent = k;
+    label.style.minWidth = '120px';
+    label.style.color = 'var(--text-muted)';
+    label.style.fontSize = '13px';
+    const input = document.createElement('input');
+    input.className = 'search-input';
+    input.style.flex = '1';
+    input.value = Array.isArray(v) ? v.join(', ') : String(v ?? '');
+    input.addEventListener('input', () => {
+      let val: any = input.value;
+      if (val.includes(',')) val = val.split(',').map((x: string) => x.trim()).filter(Boolean);
+      if (val === 'true') val = true;
+      else if (val === 'false') val = false;
+      else if (val !== '' && !isNaN(Number(val)) && !Array.isArray(val)) val = Number(val);
+      meta[k] = val;
+      updatePropsContent(meta, panel.dataset.body || body);
+    });
+    const del = document.createElement('button');
+    del.className = 'iconbtn';
+    del.textContent = '×';
+    del.addEventListener('click', () => { delete meta[k]; updatePropsContent(meta, panel.dataset.body || body); renderProps(); });
+    row.appendChild(label);
+    row.appendChild(input);
+    row.appendChild(del);
+    panel.appendChild(row);
+  }
+  const addBtn = document.createElement('button');
+  addBtn.className = 'iconbtn';
+  addBtn.style.width = 'auto';
+  addBtn.style.padding = '4px 10px';
+  addBtn.style.fontSize = '12px';
+  addBtn.textContent = '+ Add property';
+  addBtn.addEventListener('click', () => {
+    const key = prompt('Property name:');
+    if (!key || Object.prototype.hasOwnProperty.call(meta, key)) return;
+    meta[key] = '';
+    updatePropsContent(meta, panel.dataset.body || body);
+    renderProps();
+  });
+  panel.appendChild(addBtn);
+}
 
 async function main() {
   buildShell();

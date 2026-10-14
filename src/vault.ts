@@ -91,6 +91,25 @@ export async function saveNoteToVault(note: Note): Promise<void> {
   await w.close();
 }
 
+export async function uniqueVaultPath(handle: FileSystemDirectoryHandle, desired: string): Promise<string> {
+  const name = desired.replace(/[\\/:*?"<>|]/g, '-');
+  let base = name.endsWith('.md') ? name : `${name}.md`;
+  // try base
+  const tryPath = async (p: string) => {
+    const parts = p.split('/');
+    let dir: FileSystemDirectoryHandle = handle;
+    for (let i = 0; i < parts.length - 1; i++) {
+      try { dir = await dir.getDirectoryHandle(parts[i]); } catch { return false; }
+    }
+    try { await dir.getFileHandle(parts[parts.length - 1]); return true; } catch { return false; }
+  };
+  if (!(await tryPath(base))) return base;
+  const stem = base.replace(/\.md$/i, '');
+  let i = 1;
+  while (await tryPath(`${stem} ${i}.md`)) i++;
+  return `${stem} ${i}.md`;
+}
+
 export async function createVaultNote(handle: FileSystemDirectoryHandle, path: string, content = ''): Promise<string> {
   const parts = path.split('/');
   let dir: FileSystemDirectoryHandle = handle;

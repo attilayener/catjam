@@ -2,7 +2,7 @@ import { db, loadSettings, saveSetting } from './db';
 import type { Note, AppSettings } from './types';
 import { applyTheme } from './themes';
 import { extractWikiLinks } from './markdown';
-import { getVaultHandle, importVault, createVaultNote, saveNoteToVault, deleteVaultFile, ensureVaultPermission, openVaultPicker } from './vault';
+import { getVaultHandle, importVault, createVaultNote, saveNoteToVault, deleteVaultFile, ensureVaultPermission, openVaultPicker, uniqueVaultPath } from './vault';
 
 type Listener = () => void;
 interface State {
@@ -69,8 +69,7 @@ export async function createNote(title?: string): Promise<Note> {
   const handle = await getVaultHandle();
   if (handle && (await ensureVaultPermission(handle))) {
     const safe = t.replace(/[\\/:*?"<>|]/g, '-');
-    const path = `${safe}.md`;
-    // avoid overwrite: if exists, suffix
+    const path = await uniqueVaultPath(handle, safe);
     note.path = path;
     try { await createVaultNote(handle, path, ''); } catch (e) { console.warn(e); }
   }

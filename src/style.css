@@ -44,6 +44,7 @@ button, input, textarea { font-family: inherit; }
   cursor: pointer; transition: background .15s, border-color .15s;
 }
 .iconbtn:hover { background: var(--bg-soft); border-color: var(--border); }
+.iconbtn.active { color: var(--accent); background: var(--accent-soft); border-color: var(--accent); }
 .iconbtn svg { width: 18px; height: 18px; }
 
 /* Layout */

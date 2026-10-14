@@ -37,11 +37,20 @@ function escapeHtml(s: string) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+let headingSeq = 0;
+
 export function renderMarkdown(md: string): string {
+  headingSeq = 0;
   const withLinks = preprocessWikiLinks(md);
-  const html = marked.parse(withLinks, { async: false }) as string;
+  const renderer = new marked.Renderer();
+  renderer.heading = ({ depth, text }) => {
+    const id = 'h-' + (String(text).toLowerCase().replace(/[^\w]+/g, '-').replace(/^-|-$/g, '') || 'heading') + '-' + headingSeq++;
+    const inner = marked.parseInline(String(text));
+    return `<h${depth} id="${id}">${inner}</h${depth}>\n`;
+  };
+  const html = marked.parse(withLinks, { async: false, gfm: true, breaks: true, renderer }) as string;
   return DOMPurify.sanitize(html, {
-    ADD_ATTR: ['data-wiki', 'class'],
+    ADD_ATTR: ['data-wiki', 'class', 'id'],
     ADD_TAGS: ['a'],
   });
 }

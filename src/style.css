@@ -81,6 +81,17 @@ button, input, textarea { font-family: inherit; }
 .note-item.active { background: var(--accent-soft); }
 .note-item .title { font-weight: 500; color: var(--text-h); font-size: 14px; }
 .note-item .meta { font-size: 11px; color: var(--text-muted); }
+.note-item { position: relative; padding-right: 28px; }
+.note-del {
+  position: absolute; top: 6px; right: 6px;
+  width: 22px; height: 22px; border-radius: 4px;
+  border: none; background: transparent; color: var(--text-muted);
+  cursor: pointer; font-size: 12px; opacity: 0;
+  transition: opacity .12s, background .12s, color .12s;
+}
+.note-item:hover .note-del { opacity: 1; }
+.note-del:hover { background: var(--bg-soft); color: var(--text ); }
+@media (hover: none) { .note-del { opacity: 1; } }
 .empty-hint { padding: 12px; color: var(--text-muted); font-size: 13px; text-align: center; }
 
 .sidebar-foot { padding: 8px; border-top: 1px solid var(--border); display: flex; gap: 6px; flex-wrap: wrap; }

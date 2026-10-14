@@ -190,6 +190,12 @@ function bindEvents() {
   editorPane.addEventListener('dragover', (e) => { e.preventDefault(); });
   editorPane.addEventListener('drop', async (e) => { e.preventDefault(); await handleDrop(e as DragEvent); });
 
+  const previewPane = document.getElementById('previewPane');
+  if (previewPane) {
+    previewPane.addEventListener('dragover', (e) => { e.preventDefault(); });
+    previewPane.addEventListener('drop', async (e) => { e.preventDefault(); await handleDrop(e as DragEvent); });
+  }
+
   document.getElementById('modeToggle')!.addEventListener('click', (e) => {
     const btn = (e.target as HTMLElement).closest('button'); if (!btn) return;
     const mode = btn.dataset.mode as any;
@@ -268,8 +274,19 @@ function renderNoteList() {
     const item = document.createElement('div');
     item.className = 'note-item' + (n.id === getState().activeId ? ' active' : '');
     const date = new Date(n.updatedAt).toLocaleString();
-    item.innerHTML = `<div class="title">${escapeHtml(n.title)}</div><div class="meta">${date}</div>`;
-    item.addEventListener('click', () => { setActive(n.id); renderAll(); toggleSidebar(false); });
+    item.innerHTML = `<div class="title">${escapeHtml(n.title)}</div><div class="meta">${date}</div>
+      <button class="note-del" title="${t('deleteNote')}" aria-label="${t('deleteNote')}">✕</button>`;
+    item.addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement).closest('.note-del'); if (btn) return;
+      setActive(n.id); renderAll(); toggleSidebar(false);
+    });
+    const delBtn = item.querySelector('.note-del') as HTMLButtonElement;
+    delBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm(t('deleteConfirm', { title: n.title }))) return;
+      await deleteNote(n.id);
+      renderAll();
+    });
     list.appendChild(item);
   }
 }

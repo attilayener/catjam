@@ -51,6 +51,7 @@ export function renderMarkdown(md: string): string {
   const html = marked.parse(withLinks, { async: false, gfm: true, breaks: true, renderer }) as string;
   return DOMPurify.sanitize(html, {
     ADD_ATTR: ['data-wiki', 'class', 'id'],
-    ADD_TAGS: ['a'],
+    ADD_TAGS: ['a', 'img'],
+    ALLOWED_URI_REGEXP: /^\s*(https?|file|data|blob):/i,
   });
 }

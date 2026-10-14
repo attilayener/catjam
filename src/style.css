@@ -92,6 +92,13 @@ button, input, textarea { font-family: inherit; }
 .note-item:hover .note-del { opacity: 1; }
 .note-del:hover { background: var(--bg-soft); color: var(--text ); }
 @media (hover: none) { .note-del { opacity: 1; } }
+.drop-overlay {
+  position: fixed; inset: 0; z-index: 999;
+  background: rgba(0,0,0,0.45);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-h); font-size: 18px; font-weight: 600;
+  backdrop-filter: blur(2px);
+}
 .empty-hint { padding: 12px; color: var(--text-muted); font-size: 13px; text-align: center; }
 
 .sidebar-foot { padding: 8px; border-top: 1px solid var(--border); display: flex; gap: 6px; flex-wrap: wrap; }

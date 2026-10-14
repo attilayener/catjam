@@ -54,6 +54,7 @@ const dict: Record<Lang, Record<string, string>> = {
     'addProperty': 'Add property (prompt)',
     'welcome': 'Welcome',
     'deleteConfirm': 'Delete "{title}"?',
+    'dropHint': 'Drop file to insert into note',
   },
   tr: {
     'brand': 'Cat Jam',
@@ -108,6 +109,7 @@ const dict: Record<Lang, Record<string, string>> = {
     'addProperty': 'Özellik ekle',
     'welcome': 'Hoş geldin',
     'deleteConfirm': '"{title}" silinsin mi?',
+    'dropHint': 'Dosyayı buraya bırak (nota ekle)',
   },
 };
 

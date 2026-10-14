@@ -113,6 +113,13 @@ function buildShell() {
   `;
   app.appendChild(side);
 
+  const overlay = document.createElement('div');
+  overlay.id = 'dropOverlay';
+  overlay.className = 'drop-overlay';
+  overlay.innerHTML = `<div>${t('dropHint')}</div>`;
+  overlay.style.display = 'none';
+  app.appendChild(overlay);
+
   bindEvents();
 }
 
@@ -188,13 +195,34 @@ function bindEvents() {
 
   const editorPane = document.getElementById('editorPane')!;
   editorPane.addEventListener('dragover', (e) => { e.preventDefault(); });
-  editorPane.addEventListener('drop', async (e) => { e.preventDefault(); await handleDrop(e as DragEvent); });
 
   const previewPane = document.getElementById('previewPane');
   if (previewPane) {
     previewPane.addEventListener('dragover', (e) => { e.preventDefault(); });
-    previewPane.addEventListener('drop', async (e) => { e.preventDefault(); await handleDrop(e as DragEvent); });
   }
+
+  // global drag-and-drop overlay handling
+  let dragCounter = 0;
+  const overlay = document.getElementById('dropOverlay')!;
+  const hasFiles = (e: DragEvent) => !!e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
+  window.addEventListener('dragenter', (e) => {
+    if (!hasFiles(e)) return;
+    dragCounter++;
+    overlay.style.display = 'flex';
+  });
+  window.addEventListener('dragover', (e) => { if (hasFiles(e)) e.preventDefault(); });
+  window.addEventListener('dragleave', (e) => {
+    if (!hasFiles(e)) return;
+    dragCounter = Math.max(0, dragCounter - 1);
+    if (dragCounter === 0) overlay.style.display = 'none';
+  });
+  window.addEventListener('drop', async (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    dragCounter = 0;
+    overlay.style.display = 'none';
+    await handleDrop(e);
+  });
 
   document.getElementById('modeToggle')!.addEventListener('click', (e) => {
     const btn = (e.target as HTMLElement).closest('button'); if (!btn) return;

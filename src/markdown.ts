@@ -1,5 +1,6 @@
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
+import { imageCache } from './images';
 
 export function extractWikiLinks(content: string): string[] {
   const links = new Set<string>();
@@ -39,9 +40,17 @@ function escapeHtml(s: string) {
 
 let headingSeq = 0;
 
+function resolveImagePlaceholders(md: string): string {
+  return md.replace(/!\[([^\]]*)\]\(catjam-image:([^)]+)\)/g, (_m, alt, id) => {
+    const url = imageCache.get(String(id).trim());
+    return url ? `![${alt}](${url})` : `![${alt}](#missing-image)`;
+  });
+}
+
 export function renderMarkdown(md: string): string {
   headingSeq = 0;
-  const withLinks = preprocessWikiLinks(md);
+  const resolved = resolveImagePlaceholders(md);
+  const withLinks = preprocessWikiLinks(resolved);
   const renderer = new marked.Renderer();
   renderer.heading = ({ depth, text }) => {
     const id = 'h-' + (String(text).toLowerCase().replace(/[^\w]+/g, '-').replace(/^-|-$/g, '') || 'heading') + '-' + headingSeq++;

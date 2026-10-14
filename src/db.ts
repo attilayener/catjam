@@ -4,6 +4,7 @@ import type { Note, AppSettings } from './types';
 export class CatJamDB extends Dexie {
   notes!: Table<Note, string>;
   settings!: Table<{ key: string; value: any }, string>;
+  images!: Table<{ id: string; name: string; dataUrl: string; createdAt: number }, string>;
 
   constructor() {
     super('catjam-db');
@@ -14,6 +15,11 @@ export class CatJamDB extends Dexie {
     this.version(2).stores({
       notes: 'id, title, updatedAt, folder, path',
       settings: 'key',
+    });
+    this.version(3).stores({
+      notes: 'id, title, updatedAt, folder, path',
+      settings: 'key',
+      images: 'id, name, createdAt',
     });
   }
 }

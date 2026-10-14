@@ -4,6 +4,7 @@ import { renderMarkdown, extractWikiLinks, extractTags } from './markdown';
 import { THEMES } from './themes';
 import { saveSetting } from './db';
 import { t, availableLanguages } from './i18n';
+import { saveImage } from './images';
 
 let saveTimer: any = null;
 let propsTimer: any = null;
@@ -1108,12 +1109,8 @@ async function handleFiles(files: File[]) {
   if (!files.length) return;
   for (const file of files) {
     if (file.type.startsWith('image/')) {
-      const url = await new Promise<string>((res) => {
-        const r = new FileReader();
-        r.onload = () => res(r.result as string);
-        r.readAsDataURL(file);
-      });
-      insertAtCursor(`\n![${file.name}](${url})\n`);
+      const id = await saveImage(file);
+      insertAtCursor(`\n![${file.name}](catjam-image:${id})\n`);
     } else {
       const text = await file.text();
       insertAtCursor(`\n### ${file.name}\n\`\`\`\n${text}\n\`\`\`\n`);

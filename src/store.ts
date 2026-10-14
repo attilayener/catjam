@@ -4,6 +4,7 @@ import { applyTheme } from './themes';
 import { extractWikiLinks } from './markdown';
 import { setLanguage as applyLanguage } from './i18n';
 import { getVaultHandle, importVault, createVaultNote, saveNoteToVault, deleteVaultFile, ensureVaultPermission, openVaultPicker, uniqueVaultPath } from './vault';
+import { loadImages } from './images';
 
 type Listener = () => void;
 interface State {
@@ -38,6 +39,7 @@ export async function initStore() {
   state.settings = await loadSettings();
   applyTheme(state.settings.theme);
   applyLanguage(state.settings.language as any);
+  await loadImages();
   // vault sync if present
   const handle = await getVaultHandle();
   if (handle && (await ensureVaultPermission(handle))) {

@@ -2,6 +2,8 @@ import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { imageCache } from './images';
 import { vaultImageCache } from './vault';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
 
 export function extractWikiLinks(content: string): string[] {
   const links = new Set<string>();
@@ -23,7 +25,46 @@ export function extractTags(content: string): string[] {
 }
 
 // Convert wiki links to placeholder anchors before marked runs, so they survive.
-export function preprocessWikiLinks(md: string): string {
+export function preprocessMath(md: string): string {
+  // block math
+  let out = md.replace(/^\\$\\$\\n([\\s\\S]+?)\\n\\$\\$$/gm, (_m, expr) => {
+    try { return katex.renderToString(expr.trim(), { displayMode: true, throwOnError: false }); }
+    catch { return _m; }
+  });
+  // inline math (single $, not $$)
+  out = out.replace(/(^|[^$])\\$([^$\\n]+)\\$(?![\\d])/g, (m, pre, expr) => {
+    try { return pre + katex.renderToString(expr.trim(), { displayMode: false, throwOnError: false }); }
+    catch { return m; }
+  });
+  return out;
+}
+
+function preprocessCallouts(md: string): string {
+  const lines = md.split('\n');
+  const out: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const m = lines[i].match(/^>\s*\[!(\w+)\]\s*(.*)$/);
+    if (m) {
+      const type = m[1].toLowerCase();
+      const title = m[2].trim();
+      const bodyLines: string[] = [];
+      i++;
+      while (i < lines.length && /^>\s?/.test(lines[i])) {
+        bodyLines.push(lines[i].replace(/^>\s?/, ''));
+        i++;
+      }
+      const bodyHtml = marked.parse(bodyLines.join('\n'), { async: false, gfm: true, breaks: true }) as string;
+      out.push(`<div class="callout callout-${type}"><div class="callout-title">${escapeHtml(title || type)}</div><div class="callout-body">${bodyHtml}</div></div>`);
+    } else {
+      out.push(lines[i]);
+      i++;
+    }
+  }
+  return out.join('\n');
+}
+
+function preprocessWikiLinks(md: string): string {
   return md.replace(/\[\[([^\]|#]+)(?:#([^\]|]*))?(?:\|([^\]]*))?\]\]/g, (_m, target, heading, alias) => {
     const t = String(target).trim();
     const label = (alias ?? heading ?? target).trim();
@@ -64,7 +105,10 @@ function resolveImagePlaceholders(md: string): string {
 export function renderMarkdown(md: string): string {
   headingSeq = 0;
   const resolved = resolveImagePlaceholders(md);
-  const withLinks = preprocessWikiLinks(resolved);
+  const mathed = preprocessMath(resolved);
+  const mermaided = mathed.replace(/```mermaid\\n([\\s\\S]*?)```/g, '<div class="mermaid">$1</div>');
+  const called = preprocessCallouts(mermaided);
+  const withLinks = preprocessWikiLinks(called);
   const renderer = new marked.Renderer();
   renderer.heading = ({ depth, text }) => {
     const id = 'h-' + (String(text).toLowerCase().replace(/[^\w]+/g, '-').replace(/^-|-$/g, '') || 'heading') + '-' + headingSeq++;
@@ -73,8 +117,8 @@ export function renderMarkdown(md: string): string {
   };
   const html = marked.parse(withLinks, { async: false, gfm: true, breaks: true, renderer }) as string;
   return DOMPurify.sanitize(html, {
-    ADD_ATTR: ['data-wiki', 'class', 'id'],
-    ADD_TAGS: ['a', 'img'],
+    ADD_ATTR: ['data-wiki', 'class', 'id', 'style', 'aria-hidden'],
+    ADD_TAGS: ['a', 'img', 'span', 'div', 'mrow', 'math', 'semantics', 'annotation'],
     ALLOWED_URI_REGEXP: /^\s*(https?|file|data|blob):/i,
   });
 }

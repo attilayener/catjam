@@ -97,6 +97,13 @@ button, input, textarea { font-family: inherit; }
 .folder-header { padding: 6px 8px 2px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); font-weight: 600; }
 .note-item mark { background: var(--accent-soft); color: var(--text-h); border-radius: 2px; padding: 0 1px; }
 .note-item .snippet { line-height: 1.4; color: var(--text-muted); }
+.callout { border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 6px; padding: 8px 10px; margin: 0.8em 0; background: var(--panel); }
+.callout-title { font-weight: 600; color: var(--text-h); margin-bottom: 4px; text-transform: capitalize; }
+.callout-body { color: var(--text); }
+.callout-note, .callout-info { border-left-color: #60a5fa; }
+.callout-warning, .callout-caution { border-left-color: #f59e0b; }
+.callout-danger, .callout-error { border-left-color: #ef4444; }
+.callout-success, .callout-tip { border-left-color: #22c55e; }
 .drop-overlay {
   position: fixed; inset: 0; z-index: 999;
   background: rgba(0,0,0,0.45);
@@ -261,3 +268,10 @@ button, input, textarea { font-family: inherit; }
   color: var(--text);
 }
 .suggest-item:hover, .suggest-item.active { background: var(--accent-soft); color: var(--text-h); }
+
+#exitFocus { position: fixed; right: 16px; bottom: 16px; z-index: 1000; display: none; width: auto; padding: 6px 12px; background: var(--panel); border: 1px solid var(--border); }
+body.focus-mode #exitFocus { display: inline-flex; }
+body.focus-mode .sidebar, body.focus-mode .topbar, body.focus-mode .side-panel, body.focus-mode .sidebar-backdrop { display: none !important; }
+body.focus-mode .layout { grid-template-columns: 1fr; }
+body.focus-mode .main { max-width: 900px; margin: 0 auto; }
+

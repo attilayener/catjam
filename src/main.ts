@@ -38,6 +38,7 @@ function buildShell() {
     <button class="iconbtn" id="btnTasks" title="${t('tasks')}">☑</button>
     <button class="iconbtn" id="btnTags" title="${t('tags')}">#</button>
     <button class="iconbtn" id="btnTemplates" title="Templates">📋</button>
+    <button class="iconbtn" id="btnFocus" title="Focus mode">🎯</button>
     <button class="iconbtn" id="btnSettings" title="${t('settings')}">⚙</button>
   `;
   app.appendChild(tb);
@@ -47,6 +48,12 @@ function buildShell() {
   backdrop.className = 'sidebar-backdrop';
   backdrop.id = 'sidebarBackdrop';
   app.appendChild(backdrop);
+
+  const exitFocus = document.createElement('button');
+  exitFocus.id = 'exitFocus';
+  exitFocus.className = 'iconbtn';
+  exitFocus.textContent = '✕ Exit focus';
+  app.appendChild(exitFocus);
 
   // layout
   const layout = document.createElement('div');
@@ -203,6 +210,8 @@ function bindEvents() {
   document.getElementById('btnTags')!.addEventListener('click', () => openTagsModal());
   document.getElementById('btnGroupFolders')!.addEventListener('click', () => { groupByFolder = !groupByFolder; renderNoteList(); });
   document.getElementById('btnTemplates')!.addEventListener('click', () => openTemplatesModal());
+  document.getElementById('btnFocus')!.addEventListener('click', () => document.body.classList.toggle('focus-mode'));
+  document.getElementById('exitFocus')!.addEventListener('click', () => document.body.classList.remove('focus-mode'));
   document.getElementById('btnSettings')!.addEventListener('click', () => openSettings());
   document.getElementById('btnDelete')!.addEventListener('click', async () => {
     const n = getActiveNote(); if (!n) return;
@@ -391,6 +400,13 @@ function openWikiTarget(target: string) {
 function updatePreview(content: string) {
   const pc = document.getElementById('previewContent')!;
   pc.innerHTML = renderMarkdown(resolveRoamEmbeds(content));
+  requestAnimationFrame(async () => {
+    try {
+      const { default: mermaid } = await import('mermaid');
+      mermaid.initialize({ startOnLoad: false });
+      await mermaid.run({ querySelector: '#previewContent .mermaid' });
+    } catch (e) {}
+  });
 }
 
 function resolveRoamEmbeds(md: string): string {
@@ -621,7 +637,9 @@ function renderSidePanel() {
   for (const b of bls) {
     const item = document.createElement('div');
     item.className = 'backlink-item';
-    item.textContent = b.title;
+    const snippetLine = b.content.split('\n').find((ln) => /\\[\\[[^\\]]*\\]\\]/g.test(ln) && ln.toLowerCase().includes('[[' + n.title.toLowerCase() + ']]')) || b.content.split('\n').find((ln) => ln.toLowerCase().includes(n.title.toLowerCase())) || '';
+    const trimmed = snippetLine.trim().slice(0, 90);
+    item.innerHTML = `<div style="color:var(--text-h);font-weight:500;">${escapeHtml(b.title)}</div>${trimmed ? `<div style="color:var(--text-muted);font-size:11px;margin-top:2px;">${escapeHtml(trimmed)}</div>` : ''}`;
     item.addEventListener('click', () => { setActive(b.id); renderAll(); });
     bl.appendChild(item);
   }
@@ -656,8 +674,9 @@ function renderAll() {
   if (currentView === 'graph') drawGraph();
 }
 
-function showGraph() {
+function showGraph(local = false) {
   currentView = 'graph';
+  (window as any).__graphLocal = local;
   document.getElementById('editorBody')!.style.display = 'none';
   document.getElementById('editorHeader')!.style.display = 'none';
   const gw = document.getElementById('graphWrap')!;
@@ -676,13 +695,41 @@ function showEditor() {
 
 // Graph
 function initGraph() {
-  const notes = getState().notes;
+  let notes = getState().notes;
+  const local = (window as any).__graphLocal;
+  if (local && getState().activeId) {
+    const adj = new Map<string, Set<string>>();
+    for (const n of getState().notes) adj.set(n.id, new Set());
+    const allEdges: { source: string; target: string }[] = [];
+    for (const n of getState().notes) {
+      for (const l of extractWikiLinks(n.content)) {
+        const t = findNoteByTitle(l);
+        if (t) allEdges.push({ source: n.id, target: t.id });
+      }
+    }
+    for (const e of allEdges) {
+      adj.get(e.source)?.add(e.target);
+      adj.get(e.target)?.add(e.source);
+    }
+    const visited = new Set<string>([getState().activeId!]);
+    let frontier = [getState().activeId!];
+    for (let d = 0; d < 2 && frontier.length; d++) {
+      const next: string[] = [];
+      for (const id of frontier) {
+        for (const nb of adj.get(id) || []) {
+          if (!visited.has(nb)) { visited.add(nb); next.push(nb); }
+        }
+      }
+      frontier = next;
+    }
+    notes = getState().notes.filter((n) => visited.has(n.id));
+  }
   graphNodes = notes.map((n) => ({ id: n.id, title: n.title, x: Math.random() * 400 + 100, y: Math.random() * 300 + 100, vx: 0, vy: 0 }));
   graphEdges = [];
   for (const n of notes) {
     for (const l of extractWikiLinks(n.content)) {
       const target = findNoteByTitle(l);
-      if (target) graphEdges.push({ source: n.id, target: target.id });
+      if (target && notes.some((x) => x.id === target.id)) graphEdges.push({ source: n.id, target: target.id });
     }
   }
   // attach canvas sizing
@@ -862,6 +909,7 @@ function openCommandPalette() {
       { label: t('newNoteCmd'), hint: 'Ctrl+N', action: () => { newNoteAndRender(); } },
       { label: t('dailyNoteCmd'), hint: '', action: () => dailyNote() },
       { label: t('toggleGraph'), hint: '', action: () => showGraph() },
+      { label: 'Local graph (active note)', hint: '', action: () => showGraph(true) },
       { label: t('toggleBacklinks'), hint: '', action: () => toggleSidePanel() },
       { label: t('openSettings'), hint: '', action: () => openSettings() },
       { label: t('modeEdit'), hint: '', action: () => { setEditorMode('edit'); applyMode('edit'); } },

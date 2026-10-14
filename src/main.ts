@@ -238,14 +238,36 @@ function bindEvents() {
   editorTextarea.addEventListener('keyup', updateSuggestions);
   editorTextarea.addEventListener('click', updateSuggestions);
   editorTextarea.addEventListener('keydown', (e) => {
-    if (!suggestState) return;
-    const box = document.getElementById('suggestBox')!;
-    if (box.style.display === 'none') return;
-    const items = suggestState.items;
-    if (e.key === 'ArrowDown') { e.preventDefault(); suggestState.index = (suggestState.index + 1) % items.length; highlightSuggestion(); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); suggestState.index = (suggestState.index - 1 + items.length) % items.length; highlightSuggestion(); }
-    else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); acceptSuggestion(); }
-    else if (e.key === 'Escape') { hideSuggestions(); }
+    const box = document.getElementById('suggestBox');
+    const suggestVisible = !!suggestState && !!box && box.style.display !== 'none';
+    if (suggestVisible) {
+      const items = suggestState!.items;
+      if (e.key === 'ArrowDown') { e.preventDefault(); suggestState!.index = (suggestState!.index + 1) % items.length; highlightSuggestion(); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); suggestState!.index = (suggestState!.index - 1 + items.length) % items.length; highlightSuggestion(); return; }
+      if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); acceptSuggestion(); return; }
+      if (e.key === 'Escape') { hideSuggestions(); return; }
+    }
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const ta = editorTextarea;
+      const start = ta.selectionStart, end = ta.selectionEnd;
+      const value = ta.value;
+      const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+      const lineEndIdx = value.indexOf('\n', end);
+      const actualEnd = lineEndIdx === -1 ? value.length : lineEndIdx;
+      const block = value.slice(lineStart, actualEnd);
+      let newBlock: string;
+      if (e.shiftKey) {
+        newBlock = block.replace(/^  /gm, '').replace(/^ /gm, '');
+      } else {
+        newBlock = block.replace(/^/gm, '  ');
+      }
+      ta.value = value.slice(0, lineStart) + newBlock + value.slice(actualEnd);
+      const delta = newBlock.length - block.length;
+      ta.selectionStart = start + (e.shiftKey ? 0 : 2);
+      ta.selectionEnd = end + delta;
+      ta.dispatchEvent(new Event('input'));
+    }
   });
   editorTextarea.addEventListener('blur', () => { setTimeout(hideSuggestions, 200); });
   editorTextarea.addEventListener('paste', async (e) => {
@@ -397,6 +419,13 @@ function resolveRoamEmbeds(md: string): string {
     const info = blockMap.get(id);
     if (info) return `[[${info.title}#^${id}|^${id}]]`;
     return `((${id}))`;
+  });
+  // Roam queries {{[[query]]: term}}
+  out = out.replace(/\{\{\[\[query\]\]:\s*(.*?)\}\}/g, (_m, term) => {
+    const t = String(term).trim().toLowerCase();
+    const matches = getState().notes.filter((n) => n.title.toLowerCase().includes(t) || n.content.toLowerCase().includes(t));
+    if (!matches.length) return '_(no results)_';
+    return matches.map((n) => `- [[${n.title}]]`).join('\n');
   });
   return out;
 }
@@ -1426,7 +1455,7 @@ function addBlockIdToCurrentLine() {
   const ta = document.getElementById('editorTextarea') as HTMLTextAreaElement;
   if (!ta) return;
   const pos = ta.selectionStart;
-  const lines = ta.value.split('\\n');
+  const lines = ta.value.split('\n');
   // find line index
   let lineIndex = 0;
   let acc = 0;
@@ -1437,7 +1466,7 @@ function addBlockIdToCurrentLine() {
   if (/\\^[A-Za-z0-9-]+\\s*$/.test(lines[lineIndex])) return;
   const id = crypto.randomUUID().slice(0, 8);
   lines[lineIndex] = lines[lineIndex].trimEnd() + ' ^' + id;
-  ta.value = lines.join('\\n');
+  ta.value = lines.join('\n');
   ta.selectionStart = ta.selectionEnd = pos + (' ^' + id).length;
   ta.dispatchEvent(new Event('input'));
 }

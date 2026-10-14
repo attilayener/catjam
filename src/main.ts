@@ -1,14 +1,16 @@
 import './style.css';
-import { initStore, getState, subscribe, createNote, updateNote, deleteNote, setActive, setSearch, setTheme, setEditorMode, getActiveNote, backlinksOf, findNoteByTitle, filteredNotes, openVault, setLanguage } from './store';
+import { initStore, getState, subscribe, createNote, updateNote, deleteNote, setActive, setSearch, setTheme, setEditorMode, getActiveNote, backlinksOf, findNoteByTitle, filteredNotes, openVault, setLanguage, reorderNotes } from './store';
 import { renderMarkdown, extractWikiLinks, extractTags } from './markdown';
 import { THEMES } from './themes';
-import { saveSetting } from './db';
+import { saveSetting, db } from './db';
 import { t, availableLanguages } from './i18n';
-import { saveImage } from './images';
+import { saveImage, loadImages } from './images';
+import { getVaultHandle, ensureVaultPermission, saveImageToVault } from './vault';
 
 let saveTimer: any = null;
 let propsTimer: any = null;
 let suggestState: { triggerStart: number; items: { label: string; insert: string }[]; index: number; type: 'wiki' | 'tag' } | null = null;
+let groupByFolder = false;
 let currentView: 'editor' | 'graph' = 'editor';
 
 
@@ -28,6 +30,7 @@ function buildShell() {
     <button class="iconbtn" id="btnPalette" title="${t('palette')}">⌘</button>
     <button class="iconbtn" id="btnTasks" title="${t('tasks')}">☑</button>
     <button class="iconbtn" id="btnTags" title="${t('tags')}">#</button>
+    <button class="iconbtn" id="btnTemplates" title="Templates">📋</button>
     <button class="iconbtn" id="btnSettings" title="${t('settings')}">⚙</button>
   `;
   app.appendChild(tb);
@@ -49,12 +52,15 @@ function buildShell() {
   sidebar.innerHTML = `
     <div class="sidebar-head">
       <input class="search-input" id="searchInput" placeholder="${t('searchPlaceholder')}" />
+      <button class="iconbtn" id="btnGroupFolders" title="Group by folder">📂</button>
     </div>
     <div class="note-list" id="noteList"></div>
     <div class="sidebar-foot">
       <button class="iconbtn" id="btnSidebarNew" title="${t('newNoteBtn')}">＋ ${t('newNoteBtn')}</button>
       <button class="iconbtn" id="btnSidebarDaily" title="${t('dailyNote')}">📅 ${t('dailyNote')}</button>
       <button class="iconbtn" id="btnOpenVault" title="${t('openVault')}">📁 ${t('openVault')}</button>
+      <button class="iconbtn" id="btnExport" title="Export">⬇ Export</button>
+      <button class="iconbtn" id="btnImport" title="Import">⬆ Import</button>
     </div>
   `;
 
@@ -71,6 +77,7 @@ function buildShell() {
       </div>
       <button class="iconbtn" id="btnDelete" title="${t('deleteNote')}">🗑</button>
       <button class="iconbtn" id="btnProps" title="${t('props')}" style="width:auto;padding:4px 8px;font-size:12px;">${t('props')}</button>
+      <button class="iconbtn" id="btnHistory" title="History" style="width:auto;padding:4px 8px;font-size:12px;">History</button>
     </div>
     <div id="propsPanel" style="display:none;padding:8px 12px;border-bottom:1px solid var(--border);background:var(--panel);"></div>
     <div class="editor-body" id="editorBody">
@@ -138,12 +145,44 @@ function bindEvents() {
     const ok = await openVault();
     if (ok) renderAll(); else alert('Vault açılamadı veya iptal edildi.');
   });
+  document.getElementById('btnExport')!.addEventListener('click', async () => {
+    const payload = { notes: await db.notes.toArray(), images: await db.images.toArray(), exportedAt: Date.now() };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `catjam-export-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+  document.getElementById('btnImport')!.addEventListener('click', () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/json';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      try {
+        const data = JSON.parse(await file.text());
+        if (Array.isArray(data.notes)) await db.notes.bulkPut(data.notes);
+        if (Array.isArray(data.images)) await db.images.bulkPut(data.images);
+        await loadImages();
+        await initStore();
+        renderAll();
+        alert('Import completed.');
+      } catch (e) {
+        alert('Import failed: ' + (e as Error).message);
+      }
+    };
+    input.click();
+  });
   document.getElementById('btnBacklinks')!.addEventListener('click', () => toggleSidePanel());
   document.getElementById('closeSidePanel')!.addEventListener('click', () => toggleSidePanel());
   document.getElementById('btnGraph')!.addEventListener('click', () => showGraph());
   document.getElementById('btnPalette')!.addEventListener('click', () => openCommandPalette());
   document.getElementById('btnTasks')!.addEventListener('click', () => openTasksModal());
   document.getElementById('btnTags')!.addEventListener('click', () => openTagsModal());
+  document.getElementById('btnGroupFolders')!.addEventListener('click', () => { groupByFolder = !groupByFolder; renderNoteList(); });
+  document.getElementById('btnTemplates')!.addEventListener('click', () => openTemplatesModal());
   document.getElementById('btnSettings')!.addEventListener('click', () => openSettings());
   document.getElementById('btnDelete')!.addEventListener('click', async () => {
     const n = getActiveNote(); if (!n) return;
@@ -156,6 +195,7 @@ function bindEvents() {
     if (p.style.display === 'none') { p.style.display = ''; renderProps(); }
     else p.style.display = 'none';
   });
+  document.getElementById('btnHistory')!.addEventListener('click', () => openVersionsModal());
 
   const searchInput = document.getElementById('searchInput') as HTMLInputElement;
   searchInput.addEventListener('input', () => { setSearch(searchInput.value); renderNoteList(); });
@@ -309,6 +349,7 @@ function updatePreview(content: string) {
   pc.innerHTML = renderMarkdown(content);
 }
 
+
 function renderNoteList() {
   const list = document.getElementById('noteList')!;
   list.innerHTML = '';
@@ -316,11 +357,26 @@ function renderNoteList() {
   if (!notes.length) {
     const h = document.createElement('div'); h.className = 'empty-hint'; h.textContent = getState().search ? t('emptyNoMatch') : t('emptyNoNotes'); list.appendChild(h); return;
   }
-  for (const n of notes) {
+  const q = (getState().search || '').trim().toLowerCase();
+  const renderOne = (n: any) => {
     const item = document.createElement('div');
     item.className = 'note-item' + (n.id === getState().activeId ? ' active' : '');
+    item.draggable = true;
+    item.dataset.noteId = n.id;
     const date = new Date(n.updatedAt).toLocaleString();
-    item.innerHTML = `<div class="title">${escapeHtml(n.title)}</div><div class="meta">${date}</div>
+    let snippetHtml = '';
+    if (q) {
+      const haystack = (n.title + '\n' + n.content).toLowerCase();
+      const idx = haystack.indexOf(q);
+      if (idx >= 0) {
+        const start = Math.max(0, idx - 30);
+        const end = Math.min(haystack.length, idx + q.length + 50);
+        const raw = (n.title + '\n' + n.content).slice(start, end).replace(/\s+/g, ' ');
+        const hl = escapeHtml(raw).replace(new RegExp('(' + q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'ig'), '<mark>$1</mark>');
+        snippetHtml = `<div class="meta snippet">${(start > 0 ? '...' : '') + hl + (end < haystack.length ? '...' : '')}</div>`;
+      }
+    }
+    item.innerHTML = `<div class="title">${escapeHtml(n.title)}</div>${snippetHtml || `<div class="meta">${date}</div>`}
       <button class="note-del" title="${t('deleteNote')}" aria-label="${t('deleteNote')}">✕</button>`;
     item.addEventListener('click', (e) => {
       const btn = (e.target as HTMLElement).closest('.note-del'); if (btn) return;
@@ -333,7 +389,46 @@ function renderNoteList() {
       await deleteNote(n.id);
       renderAll();
     });
+    item.addEventListener('dragstart', (e) => {
+      e.dataTransfer?.setData('text/plain', n.id);
+      item.classList.add('dragging');
+    });
+    item.addEventListener('dragend', () => item.classList.remove('dragging'));
+    item.addEventListener('dragover', (e) => { e.preventDefault(); item.classList.add('drag-over'); });
+    item.addEventListener('dragleave', () => item.classList.remove('drag-over'));
+    item.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      item.classList.remove('drag-over');
+      const fromId = e.dataTransfer?.getData('text/plain');
+      const toId = n.id;
+      if (fromId && fromId !== toId) {
+        await reorderNotes(fromId, toId);
+        renderAll();
+      }
+    });
     list.appendChild(item);
+  };
+
+  if (groupByFolder) {
+    const groups = new Map<string, any[]>();
+    for (const n of notes) {
+      const key = n.folder || '';
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(n);
+    }
+    const keys = [...groups.keys()].sort((a, b) => String(a).localeCompare(String(b)));
+    for (const key of keys) {
+      if (key) {
+        const fh = document.createElement('div');
+        fh.className = 'folder-header';
+        fh.textContent = key;
+        list.appendChild(fh);
+      }
+      for (const n of groups.get(key)!) renderOne(n);
+    }
+  } else {
+    for (const n of notes) renderOne(n);
   }
 }
 
@@ -407,9 +502,9 @@ function renderSidePanel() {
         if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
         // also scroll textarea to heading line
         const ta = document.getElementById('editorTextarea') as HTMLTextAreaElement;
-        const idx = n.content.split('\\n').findIndex((l) => l.trim() === '#'.repeat(h.level) + ' ' + h.text || l.trim().startsWith('#'.repeat(h.level) + ' ' + h.text));
+        const idx = n.content.split('\n').findIndex((l) => l.trim() === '#'.repeat(h.level) + ' ' + h.text || l.trim().startsWith('#'.repeat(h.level) + ' ' + h.text));
         if (idx >= 0) {
-          const lines = n.content.split('\\n');
+          const lines = n.content.split('\n');
           let pos = 0;
           for (let i = 0; i < idx; i++) pos += lines[i].length + 1;
           ta.focus();
@@ -921,7 +1016,7 @@ function parseFrontMatter(content: string): { meta: Record<string, any>; body: s
   const m = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
   if (!m) return { meta: {}, body: content, has: false };
   const meta: Record<string, any> = {};
-  for (const line of m[1].split('\\n')) {
+  for (const line of m[1].split('\n')) {
     if (!line.trim() || line.trim().startsWith('#')) continue;
     const idx = line.indexOf(':');
     if (idx < 0) continue;
@@ -949,7 +1044,7 @@ function serializeFrontMatter(meta: Record<string, any>): string {
     if (typeof v === 'string') return `${k}: ${JSON.stringify(v)}`;
     return `${k}: ${v}`;
   });
-  return `---\\n${lines.join('\\n')}\\n---\\n\\n`;
+  return `---\n${lines.join('\n')}\n---\n\n`;
 }
 
 function updatePropsContent(meta: Record<string, any>, body: string) {
@@ -1109,8 +1204,14 @@ async function handleFiles(files: File[]) {
   if (!files.length) return;
   for (const file of files) {
     if (file.type.startsWith('image/')) {
-      const id = await saveImage(file);
-      insertAtCursor(`\n![${file.name}](catjam-image:${id})\n`);
+      const handle = await getVaultHandle();
+      if (handle && (await ensureVaultPermission(handle))) {
+        const filename = await saveImageToVault(handle, file);
+        insertAtCursor(`\n![[${filename}]]\n`);
+      } else {
+        const id = await saveImage(file);
+        insertAtCursor(`\n![${file.name}](catjam-image:${id})\n`);
+      }
     } else {
       const text = await file.text();
       insertAtCursor(`\n### ${file.name}\n\`\`\`\n${text}\n\`\`\`\n`);
@@ -1125,6 +1226,100 @@ async function handleDrop(e: DragEvent) {
     return;
   }
   await handleFiles(files);
+}
+
+function openTemplatesModal() {
+  const templates = [
+    { name: 'Meeting Notes', content: '# Meeting Notes\n\nDate: {{date}}\n\n## Attendees\n- \n\n## Agenda\n- \n\n## Action items\n- [ ] \n' },
+    { name: 'Project', content: '# Project\n\n## Goal\n\n## Tasks\n- [ ] \n\n## Resources\n- \n' },
+    { name: 'Research Note', content: '# Research\n\n## Source\n\n## Summary\n\n## Key takeaways\n- \n\n## Links\n- \n' },
+    { name: 'Journal', content: '# Journal\n\n{{date}}\n\n## Mood\n\n## Highlights\n- \n\n## Gratitude\n- \n' },
+    { name: 'Blank with Properties', content: '---\ntags: []\nstatus: draft\n---\n\n# New note\n\n' },
+  ];
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop';
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.innerHTML = '<h3>Templates</h3><div id="tmplList" style="max-height:55vh;overflow:auto;"></div>';
+  backdrop.appendChild(modal);
+  document.body.appendChild(backdrop);
+  const list = modal.querySelector('#tmplList') as HTMLDivElement;
+  for (const tp of templates) {
+    const row = document.createElement('div');
+    row.className = 'backlink-item';
+    row.style.display = 'flex';
+    row.style.flexDirection = 'column';
+    row.style.gap = '2px';
+    row.innerHTML = `<div style="color:var(--text-h);font-weight:500;">${escapeHtml(tp.name)}</div><div style="color:var(--text-muted);font-size:12px;white-space:pre-wrap;">${escapeHtml(tp.content.slice(0, 140))}…</div>`;
+    row.addEventListener('click', async () => {
+      const title = prompt('Note title', tp.name);
+      if (!title) return;
+      const note = await createNote(title);
+      await updateNote(note.id, { content: tp.content.replace(/{{date}}/g, new Date().toISOString().slice(0, 10)) });
+      renderAll();
+      backdrop.remove();
+    });
+    list.appendChild(row);
+  }
+  const footer = document.createElement('div');
+  footer.style.display = 'flex';
+  footer.style.justifyContent = 'flex-end';
+  footer.style.marginTop = '10px';
+  const close = document.createElement('button');
+  close.className = 'iconbtn';
+  close.style.width = 'auto';
+  close.style.padding = '4px 12px';
+  close.textContent = 'Close';
+  close.addEventListener('click', () => backdrop.remove());
+  footer.appendChild(close);
+  modal.appendChild(footer);
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+}
+
+function openVersionsModal() {
+  const n = getActiveNote();
+  if (!n) return;
+  (async () => {
+    const versions = (await db.versions.where('noteId').equals(n.id).toArray()).sort((a, b) => b.createdAt - a.createdAt);
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.maxWidth = '680px';
+    modal.innerHTML = '<h3>Version history</h3><div id="versionsList" style="max-height:55vh;overflow:auto;"></div>';
+    const list = modal.querySelector('#versionsList') as HTMLDivElement;
+    if (!versions.length) list.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">No saved versions yet.</div>';
+    for (const v of versions) {
+      const row = document.createElement('div');
+      row.className = 'backlink-item';
+      row.style.display = 'flex';
+      row.style.flexDirection = 'column';
+      row.style.gap = '2px';
+      row.innerHTML = `<div style="color:var(--text-h);font-weight:500;">${new Date(v.createdAt).toLocaleString()}</div><div style="color:var(--text-muted);font-size:12px;white-space:pre-wrap;">${escapeHtml(v.content.slice(0, 160))}…</div>`;
+      row.addEventListener('click', async () => {
+        if (!confirm('Restore this version? Current content will be overwritten.')) return;
+        await updateNote(n.id, { content: v.content, title: v.title });
+        renderAll();
+        backdrop.remove();
+      });
+      list.appendChild(row);
+    }
+    const footer = document.createElement('div');
+    footer.style.display = 'flex';
+    footer.style.justifyContent = 'flex-end';
+    footer.style.marginTop = '10px';
+    const close = document.createElement('button');
+    close.className = 'iconbtn';
+    close.style.width = 'auto';
+    close.style.padding = '4px 12px';
+    close.textContent = 'Close';
+    close.addEventListener('click', () => backdrop.remove());
+    footer.appendChild(close);
+    modal.appendChild(footer);
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+    backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+  })();
 }
 
 async function main() {

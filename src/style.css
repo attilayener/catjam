@@ -92,6 +92,11 @@ button, input, textarea { font-family: inherit; }
 .note-item:hover .note-del { opacity: 1; }
 .note-del:hover { background: var(--bg-soft); color: var(--text ); }
 @media (hover: none) { .note-del { opacity: 1; } }
+.note-item.dragging { opacity: 0.5; }
+.note-item.drag-over { outline: 2px dashed var(--accent); outline-offset: -2px; }
+.folder-header { padding: 6px 8px 2px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); font-weight: 600; }
+.note-item mark { background: var(--accent-soft); color: var(--text-h); border-radius: 2px; padding: 0 1px; }
+.note-item .snippet { line-height: 1.4; color: var(--text-muted); }
 .drop-overlay {
   position: fixed; inset: 0; z-index: 999;
   background: rgba(0,0,0,0.45);

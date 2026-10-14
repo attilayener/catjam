@@ -3,7 +3,7 @@ import type { Note, AppSettings } from './types';
 import { applyTheme } from './themes';
 import { extractWikiLinks } from './markdown';
 import { setLanguage as applyLanguage } from './i18n';
-import { getVaultHandle, importVault, createVaultNote, saveNoteToVault, deleteVaultFile, ensureVaultPermission, openVaultPicker, uniqueVaultPath } from './vault';
+import { getVaultHandle, importVault, createVaultNote, saveNoteToVault, deleteVaultFile, ensureVaultPermission, openVaultPicker, uniqueVaultPath, loadVaultImages } from './vault';
 import { loadImages } from './images';
 
 type Listener = () => void;
@@ -43,9 +43,11 @@ export async function initStore() {
   // vault sync if present
   const handle = await getVaultHandle();
   if (handle && (await ensureVaultPermission(handle))) {
-    try { await importVault(handle); } catch (e) { console.warn(e); }
+    try { await importVault(handle); await loadVaultImages(handle); } catch (e) { console.warn(e); }
+    await loadVaultImages(handle);
   }
-  const all = await db.notes.orderBy('updatedAt').reverse().toArray();
+  const all = await db.notes.toArray();
+  all.sort((a, b) => (a.order ?? a.createdAt ?? 0) - (b.order ?? b.createdAt ?? 0));
   state.notes = all;
   state.ready = true;
   if (all.length) state.activeId = all[0].id;
@@ -69,6 +71,7 @@ export async function createNote(title?: string): Promise<Note> {
     content: '',
     createdAt: now,
     updatedAt: now,
+    order: Date.now(),
   };
   const handle = await getVaultHandle();
   if (handle && (await ensureVaultPermission(handle))) {
@@ -78,7 +81,8 @@ export async function createNote(title?: string): Promise<Note> {
     try { await createVaultNote(handle, path, ''); } catch (e) { console.warn(e); }
   }
   await db.notes.put(note);
-  state.notes = [note, ...state.notes];
+  state.notes.push(note);
+  state.notes.sort((a, b) => (a.order ?? a.createdAt ?? 0) - (b.order ?? b.createdAt ?? 0));
   state.activeId = note.id;
   emit();
   return note;
@@ -89,9 +93,16 @@ export async function updateNote(id: string, patch: Partial<Note>) {
   if (idx < 0) return;
   const updated = { ...state.notes[idx], ...patch, updatedAt: Date.now() };
   state.notes[idx] = updated;
-  state.notes.sort((a, b) => b.updatedAt - a.updatedAt);
+  state.notes.sort((a, b) => (a.order ?? a.createdAt ?? 0) - (b.order ?? b.createdAt ?? 0));
   await db.notes.put(updated);
   if (updated.path) saveNoteToVault(updated).catch((e) => console.warn(e));
+  // version snapshot (throttled to one per minute per note)
+  try {
+    const last = (await db.versions.where('noteId').equals(id).toArray()).sort((a, b) => b.createdAt - a.createdAt)[0];
+    if (!last || Date.now() - last.createdAt > 60000) {
+      await db.versions.put({ id: crypto.randomUUID(), noteId: id, title: updated.title, content: updated.content, createdAt: Date.now() });
+    }
+  } catch (e) { /* ignore */ }
   emit();
 }
 
@@ -148,8 +159,8 @@ export function findNoteByTitle(title: string): Note | undefined {
 export async function openVault(): Promise<boolean> {
   let handle = await getVaultHandle();
   if (handle && (await ensureVaultPermission(handle))) {
-    await importVault(handle);
-    const all = await db.notes.orderBy('updatedAt').reverse().toArray();
+    await importVault(handle); await loadVaultImages(handle);
+    const all = await db.notes.toArray(); all.sort((a,b)=>(a.order??a.createdAt??0)-(b.order??b.createdAt??0));
     state.notes = all;
     if (all.length) state.activeId = all[0].id;
     emit();
@@ -158,12 +169,25 @@ export async function openVault(): Promise<boolean> {
   handle = await openVaultPicker();
   if (!handle) return false;
   if (!(await ensureVaultPermission(handle))) return false;
-  await importVault(handle);
-  const all = await db.notes.orderBy('updatedAt').reverse().toArray();
+  await importVault(handle); await loadVaultImages(handle);
+  const all = await db.notes.toArray(); all.sort((a,b)=>(a.order??a.createdAt??0)-(b.order??b.createdAt??0));
   state.notes = all;
   if (all.length) state.activeId = all[0].id;
   emit();
   return true;
+}
+
+export async function reorderNotes(activeId: string, overId: string): Promise<void> {
+  const fromIdx = state.notes.findIndex((n) => n.id === activeId);
+  const toIdx = state.notes.findIndex((n) => n.id === overId);
+  if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return;
+  const arr = [...state.notes];
+  const [moved] = arr.splice(fromIdx, 1);
+  arr.splice(toIdx, 0, moved);
+  arr.forEach((n, i) => (n.order = i + 1));
+  await Promise.all(arr.map((n) => db.notes.put(n)));
+  state.notes = arr;
+  emit();
 }
 
 export function backlinksOf(title: string): Note[] {

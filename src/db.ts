@@ -5,6 +5,7 @@ export class CatJamDB extends Dexie {
   notes!: Table<Note, string>;
   settings!: Table<{ key: string; value: any }, string>;
   images!: Table<{ id: string; name: string; dataUrl: string; createdAt: number }, string>;
+  versions!: Table<{ id: string; noteId: string; title: string; content: string; createdAt: number }, string>;
 
   constructor() {
     super('catjam-db');
@@ -20,6 +21,17 @@ export class CatJamDB extends Dexie {
       notes: 'id, title, updatedAt, folder, path',
       settings: 'key',
       images: 'id, name, createdAt',
+    });
+    this.version(4).stores({
+      notes: 'id, title, updatedAt, folder, path, order',
+      settings: 'key',
+      images: 'id, name, createdAt',
+    });
+    this.version(5).stores({
+      notes: 'id, title, updatedAt, folder, path, order',
+      settings: 'key',
+      images: 'id, name, createdAt',
+      versions: 'id, noteId, createdAt',
     });
   }
 }

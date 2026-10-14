@@ -133,3 +133,43 @@ export async function deleteVaultFile(path: string): Promise<void> {
   }
   try { await (dir as any).removeEntry(parts[parts.length - 1]); } catch {}
 }
+
+// Vault image cache
+export const vaultImageCache = new Map<string,string>();
+
+export async function loadVaultImages(handle: FileSystemDirectoryHandle | null): Promise<void> {
+  if (!handle) { vaultImageCache.clear(); return; }
+  vaultImageCache.clear();
+  const files = await walk(handle);
+  const imgExt = /\.(png|jpe?g|gif|webp|svg|bmp)$/i;
+  for (const f of files) {
+    if (!imgExt.test(f.path)) continue;
+    try {
+      const file = await f.handle.getFile();
+      const url = await new Promise<string>((res) => { const r = new FileReader(); r.onload = () => res(r.result as string); r.readAsDataURL(file); });
+      vaultImageCache.set(f.path.split('/').pop() || f.path, url);
+      vaultImageCache.set(f.path, url);
+    } catch {}
+  }
+}
+export async function saveImageToVault(handle: FileSystemDirectoryHandle, file: File): Promise<string> {
+  const url = await new Promise<string>((res) => { const r = new FileReader(); r.onload = () => res(r.result as string); r.readAsDataURL(file); });
+  let dir: FileSystemDirectoryHandle;
+  try { dir = await handle.getDirectoryHandle('attachments', { create: true }); } catch { dir = handle; }
+  // unique filename
+  const ext = (file.name.match(/\.[^.]+$/) || [''])[0];
+  const base = (file.name.replace(/\.[^.]+$/, '') || 'image').replace(/[\\/:*?"<>|]/g, '-');
+  let filename = base + ext;
+  let i = 1;
+  while (true) {
+    try { await dir.getFileHandle(filename); filename = `${base} ${i}${ext}`; i++; }
+    catch { break; }
+  }
+  const fh = await dir.getFileHandle(filename, { create: true });
+  const w = await fh.createWritable();
+  await w.write(await file.arrayBuffer());
+  await w.close();
+  vaultImageCache.set(filename, url);
+  vaultImageCache.set(`attachments/${filename}`, url);
+  return filename;
+}

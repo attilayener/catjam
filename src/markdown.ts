@@ -1,6 +1,7 @@
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { imageCache } from './images';
+import { vaultImageCache } from './vault';
 
 export function extractWikiLinks(content: string): string[] {
   const links = new Set<string>();
@@ -41,10 +42,23 @@ function escapeHtml(s: string) {
 let headingSeq = 0;
 
 function resolveImagePlaceholders(md: string): string {
-  return md.replace(/!\[([^\]]*)\]\(catjam-image:([^)]+)\)/g, (_m, alt, id) => {
+  let out = md.replace(/!\[([^\]]*)\]\(catjam-image:([^)]+)\)/g, (_m, alt, id) => {
     const url = imageCache.get(String(id).trim());
     return url ? `![${alt}](${url})` : `![${alt}](#missing-image)`;
   });
+  // Obsidian-style image embeds ![[file.ext]]
+  out = out.replace(/!\[\[([^]]+\.(?:png|jpe?g|gif|webp|svg|bmp))\]\]/gi, (_m, name) => {
+    const url = vaultImageCache.get(name) || vaultImageCache.get(name.split('/').pop() || name);
+    return url ? `![](${url})` : `![${name}](#missing-image)`;
+  });
+  // Relative markdown image paths that are in vault cache
+  out = out.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (m, alt, src) => {
+    if (/^(https?:|data:|blob:|#)/i.test(src)) return m;
+    const key = src.split('/').pop() || src;
+    const url = vaultImageCache.get(src) || vaultImageCache.get(key);
+    return url ? `![${alt}](${url})` : m;
+  });
+  return out;
 }
 
 export function renderMarkdown(md: string): string {

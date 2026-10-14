@@ -6,6 +6,7 @@ export interface Note {
   updatedAt: number;
   folder?: string;
   path?: string;
+  order?: number;
 }
 
 export interface AppSettings {

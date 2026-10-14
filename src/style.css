@@ -223,3 +223,18 @@ button, input, textarea { font-family: inherit; }
 .cmd-item:hover, .cmd-item.active { background: var(--accent-soft); }
 .cmd-item .label { color: var(--text-h); }
 .cmd-item .hint { color: var(--text-muted); font-size: 12px; margin-left: auto; }
+
+.suggest-box {
+  position: absolute;
+  left: 12px; bottom: 12px;
+  min-width: 220px; max-width: 360px;
+  max-height: 220px; overflow: auto;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 8px; box-shadow: var(--shadow);
+  padding: 4px; z-index: 4;
+}
+.suggest-item {
+  padding: 6px 8px; border-radius: 4px; cursor: pointer; font-size: 13px;
+  color: var(--text);
+}
+.suggest-item:hover, .suggest-item.active { background: var(--accent-soft); color: var(--text-h); }

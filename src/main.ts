@@ -7,6 +7,7 @@ import { t, availableLanguages } from './i18n';
 
 let saveTimer: any = null;
 let propsTimer: any = null;
+let suggestState: { triggerStart: number; items: { label: string; insert: string }[]; index: number; type: 'wiki' | 'tag' } | null = null;
 let currentView: 'editor' | 'graph' = 'editor';
 
 
@@ -72,8 +73,9 @@ function buildShell() {
     </div>
     <div id="propsPanel" style="display:none;padding:8px 12px;border-bottom:1px solid var(--border);background:var(--panel);"></div>
     <div class="editor-body" id="editorBody">
-      <div class="editor-pane" id="editorPane">
+      <div class="editor-pane" id="editorPane" style="position:relative;">
         <textarea class="editor-textarea" id="editorTextarea" placeholder="${t('editorPlaceholder')}"></textarea>
+        <div id="suggestBox" class="suggest-box" style="display:none;"></div>
       </div>
       <div class="preview-pane" id="previewPane">
         <div class="markdown" id="previewContent"></div>
@@ -168,7 +170,25 @@ function bindEvents() {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => updateNote(n.id, { content: editorTextarea.value }), 500);
     updatePreview(editorTextarea.value);
+    updateSuggestions();
   });
+  editorTextarea.addEventListener('keyup', updateSuggestions);
+  editorTextarea.addEventListener('click', updateSuggestions);
+  editorTextarea.addEventListener('keydown', (e) => {
+    if (!suggestState) return;
+    const box = document.getElementById('suggestBox')!;
+    if (box.style.display === 'none') return;
+    const items = suggestState.items;
+    if (e.key === 'ArrowDown') { e.preventDefault(); suggestState.index = (suggestState.index + 1) % items.length; highlightSuggestion(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); suggestState.index = (suggestState.index - 1 + items.length) % items.length; highlightSuggestion(); }
+    else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); acceptSuggestion(); }
+    else if (e.key === 'Escape') { hideSuggestions(); }
+  });
+  editorTextarea.addEventListener('blur', () => { setTimeout(hideSuggestions, 200); });
+
+  const editorPane = document.getElementById('editorPane')!;
+  editorPane.addEventListener('dragover', (e) => { e.preventDefault(); });
+  editorPane.addEventListener('drop', async (e) => { e.preventDefault(); await handleDrop(e as DragEvent); });
 
   document.getElementById('modeToggle')!.addEventListener('click', (e) => {
     const btn = (e.target as HTMLElement).closest('button'); if (!btn) return;
@@ -301,7 +321,7 @@ function renderSidePanel() {
   // outline
   const headingItems: { level: number; text: string; id: string }[] = [];
   {
-    const re = /^(#{1,6})\\s+(.+)$/gm;
+    const re = /^(#{1,6})\s+(.+)$/gm;
     let i = 0;
     let mm: RegExpExecArray | null;
     while ((mm = re.exec(n.content))) {
@@ -835,7 +855,7 @@ function openTagsModal() {
 }
 
 function parseFrontMatter(content: string): { meta: Record<string, any>; body: string; has: boolean } {
-  const m = content.match(/^---\\r?\\n([\\s\\S]*?)\\r?\\n---\\r?\\n?/);
+  const m = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
   if (!m) return { meta: {}, body: content, has: false };
   const meta: Record<string, any> = {};
   for (const line of m[1].split('\\n')) {
@@ -936,6 +956,112 @@ function renderProps() {
     renderProps();
   });
   panel.appendChild(addBtn);
+}
+
+function hideSuggestions() {
+  const box = document.getElementById('suggestBox');
+  if (box) box.style.display = 'none';
+  suggestState = null;
+}
+function highlightSuggestion() {
+  if (!suggestState) return;
+  const box = document.getElementById('suggestBox')!;
+  box.querySelectorAll('.suggest-item').forEach((el, i) => el.classList.toggle('active', i === suggestState!.index));
+}
+function acceptSuggestion() {
+  if (!suggestState) return;
+  const ta = document.getElementById('editorTextarea') as HTMLTextAreaElement;
+  const item = suggestState.items[suggestState.index];
+  const before = ta.value.slice(0, suggestState.triggerStart);
+  const after = ta.value.slice(ta.selectionStart);
+  const insertion = suggestState.type === 'wiki' ? `[[${item.insert}]] ` : `#${item.insert} `;
+  ta.value = before + insertion + after;
+  const newPos = before.length + insertion.length;
+  ta.selectionStart = ta.selectionEnd = newPos;
+  hideSuggestions();
+  ta.dispatchEvent(new Event('input'));
+}
+function updateSuggestions() {
+  const ta = document.getElementById('editorTextarea') as HTMLTextAreaElement;
+  if (!ta) return;
+  const pos = ta.selectionStart;
+  const before = ta.value.slice(0, pos);
+  let m = before.match(/\[\[([^\]]*)$/);
+  if (m) {
+    const prefix = m[1];
+    const triggerStart = pos - m[0].length;
+    const items = getState().notes
+      .filter((n) => n.title.toLowerCase().includes(prefix.toLowerCase()))
+      .slice(0, 8)
+      .map((n) => ({ label: n.title, insert: n.title }));
+    if (items.length) {
+      showSuggest(items, triggerStart, 'wiki');
+      return;
+    }
+  }
+  m = before.match(/#([\w-]*)$/);
+  if (m) {
+    const prev = before[before.length - m[0].length - 1];
+    if (!prev || /\s/.test(prev)) {
+      const prefix = m[1];
+      const triggerStart = pos - m[0].length;
+      const allTags = [...new Set(getState().notes.flatMap((n) => extractTags(n.content)))];
+      const items = allTags
+        .filter((t) => t.toLowerCase().startsWith(prefix.toLowerCase()))
+        .slice(0, 8)
+        .map((t) => ({ label: '#' + t, insert: t }));
+      if (items.length) {
+        showSuggest(items, triggerStart, 'tag');
+        return;
+      }
+    }
+  }
+  hideSuggestions();
+}
+function showSuggest(items: { label: string; insert: string }[], triggerStart: number, type: 'wiki' | 'tag') {
+  suggestState = { triggerStart, items, index: 0, type };
+  const box = document.getElementById('suggestBox')!;
+  box.innerHTML = '';
+  items.forEach((it, i) => {
+    const row = document.createElement('div');
+    row.className = 'suggest-item' + (i === 0 ? ' active' : '');
+    row.textContent = it.label;
+    row.addEventListener('mousedown', (e) => { e.preventDefault(); acceptSuggestionAt(i); });
+    box.appendChild(row);
+  });
+  box.style.display = '';
+}
+function acceptSuggestionAt(i: number) {
+  if (suggestState) suggestState.index = i;
+  acceptSuggestion();
+}
+function insertAtCursor(text: string) {
+  const ta = document.getElementById('editorTextarea') as HTMLTextAreaElement;
+  const s = ta.selectionStart;
+  ta.value = ta.value.slice(0, s) + text + ta.value.slice(ta.selectionEnd);
+  ta.selectionStart = ta.selectionEnd = s + text.length;
+  ta.dispatchEvent(new Event('input'));
+}
+async function handleDrop(e: DragEvent) {
+  const files = Array.from(e.dataTransfer?.files || []);
+  if (!files.length) {
+    const text = e.dataTransfer?.getData('text/plain');
+    if (text) insertAtCursor(text);
+    return;
+  }
+  for (const file of files) {
+    if (file.type.startsWith('image/')) {
+      const url = await new Promise<string>((res) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result as string);
+        r.readAsDataURL(file);
+      });
+      insertAtCursor(`\n![${file.name}](${url})\n`);
+    } else {
+      const text = await file.text();
+      insertAtCursor(`\n### ${file.name}\n\`\`\`\n${text}\n\`\`\`\n`);
+    }
+  }
 }
 
 async function main() {

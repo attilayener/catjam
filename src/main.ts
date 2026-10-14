@@ -192,6 +192,23 @@ function bindEvents() {
     else if (e.key === 'Escape') { hideSuggestions(); }
   });
   editorTextarea.addEventListener('blur', () => { setTimeout(hideSuggestions, 200); });
+  editorTextarea.addEventListener('paste', async (e) => {
+    const cd = (e as ClipboardEvent).clipboardData;
+    if (!cd) return;
+    const files: File[] = [];
+    if (cd.files && cd.files.length) files.push(...Array.from(cd.files));
+    if (!files.length && cd.items) {
+      for (const it of Array.from(cd.items)) {
+        if (it.kind === 'file') {
+          const f = it.getAsFile();
+          if (f) files.push(f);
+        }
+      }
+    }
+    if (!files.length) return; // let normal text paste happen
+    e.preventDefault();
+    await handleFiles(files);
+  });
 
   const editorPane = document.getElementById('editorPane')!;
   editorPane.addEventListener('dragover', (e) => { e.preventDefault(); });
@@ -1087,13 +1104,8 @@ function insertAtCursor(text: string) {
   ta.selectionStart = ta.selectionEnd = s + text.length;
   ta.dispatchEvent(new Event('input'));
 }
-async function handleDrop(e: DragEvent) {
-  const files = Array.from(e.dataTransfer?.files || []);
-  if (!files.length) {
-    const text = e.dataTransfer?.getData('text/plain');
-    if (text) insertAtCursor(text);
-    return;
-  }
+async function handleFiles(files: File[]) {
+  if (!files.length) return;
   for (const file of files) {
     if (file.type.startsWith('image/')) {
       const url = await new Promise<string>((res) => {
@@ -1107,6 +1119,15 @@ async function handleDrop(e: DragEvent) {
       insertAtCursor(`\n### ${file.name}\n\`\`\`\n${text}\n\`\`\`\n`);
     }
   }
+}
+async function handleDrop(e: DragEvent) {
+  const files = Array.from(e.dataTransfer?.files || []);
+  if (!files.length) {
+    const text = e.dataTransfer?.getData('text/plain');
+    if (text) insertAtCursor(text);
+    return;
+  }
+  await handleFiles(files);
 }
 
 async function main() {

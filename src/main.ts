@@ -11,6 +11,13 @@ let saveTimer: any = null;
 let propsTimer: any = null;
 let suggestState: { triggerStart: number; items: { label: string; insert: string }[]; index: number; type: 'wiki' | 'tag' } | null = null;
 let groupByFolder = false;
+let lastViewedId: string | null = null;
+let recentNoteIds: string[] = [];
+try { recentNoteIds = JSON.parse(localStorage.getItem('catjam:recent') || '[]'); } catch { recentNoteIds = []; }
+function markRecent(id: string) {
+  recentNoteIds = [id, ...recentNoteIds.filter((x) => x !== id)].slice(0, 12);
+  localStorage.setItem('catjam:recent', JSON.stringify(recentNoteIds));
+}
 let currentView: 'editor' | 'graph' = 'editor';
 
 
@@ -528,6 +535,7 @@ function applyMode(mode: string) {
 
 function renderEditor() {
   const n = getActiveNote();
+  if (n && n.id !== lastViewedId) { lastViewedId = n.id; markRecent(n.id); }
   const titleInput = document.getElementById('titleInput') as HTMLInputElement;
   const textarea = document.getElementById('editorTextarea') as HTMLTextAreaElement;
   if (!n) {
@@ -861,7 +869,22 @@ function openCommandPalette() {
       { label: t('modeSplit'), hint: '', action: () => { setEditorMode('split'); applyMode('split'); } },
       { label: 'Add block reference ID', hint: '', action: () => addBlockIdToCurrentLine() },
     ].filter((c) => c.label.toLowerCase().includes(f));
-    const notes = getState().notes.filter((n) => n.title.toLowerCase().includes(f)).slice(0, 12);
+    let candidateNotes: any[] = getState().notes;
+    if (f) {
+      candidateNotes = candidateNotes
+        .map((n) => {
+          const score = fuzzyScore(n.title, f);
+          return score >= 0 ? { n, score } : null;
+        })
+        .filter(Boolean) as { n: any; score: number }[];
+      candidateNotes.sort((a, b) => b.score - a.score);
+      candidateNotes = candidateNotes.map((x) => x.n).slice(0, 12);
+    } else {
+      const recent = recentNoteIds.map((id) => getState().notes.find((n) => n.id === id)).filter(Boolean) as any[];
+      const rest = getState().notes.filter((n) => !recentNoteIds.includes(n.id)).slice(0, 12 - recent.length);
+      candidateNotes = [...recent, ...rest].slice(0, 12);
+    }
+    const notes = candidateNotes;
     const items: HTMLElement[] = [];
     for (const c of cmds) {
       const it = document.createElement('div');
@@ -1469,6 +1492,25 @@ function addBlockIdToCurrentLine() {
   ta.value = lines.join('\n');
   ta.selectionStart = ta.selectionEnd = pos + (' ^' + id).length;
   ta.dispatchEvent(new Event('input'));
+}
+
+function fuzzyScore(text: string, query: string): number {
+  if (!query) return 0;
+  const t = text.toLowerCase();
+  const q = query.toLowerCase();
+  let i = 0;
+  let score = 0;
+  let streak = 0;
+  for (let k = 0; k < t.length && i < q.length; k++) {
+    if (t[k] === q[i]) {
+      score += 1 + streak * 0.4;
+      streak++;
+      i++;
+    } else {
+      streak = 0;
+    }
+  }
+  return i === q.length ? score : -1;
 }
 
 async function main() {

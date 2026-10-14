@@ -5,7 +5,7 @@ import { THEMES } from './themes';
 import { saveSetting, db } from './db';
 import { t, availableLanguages } from './i18n';
 import { saveImage, loadImages } from './images';
-import { getVaultHandle, ensureVaultPermission, saveImageToVault } from './vault';
+import { getVaultHandle, ensureVaultPermission, saveImageToVault, uniqueVaultPath, createVaultNote, loadVaultImages } from './vault';
 
 let saveTimer: any = null;
 let propsTimer: any = null;
@@ -61,6 +61,7 @@ function buildShell() {
       <button class="iconbtn" id="btnOpenVault" title="${t('openVault')}">📁 ${t('openVault')}</button>
       <button class="iconbtn" id="btnExport" title="Export">⬇ Export</button>
       <button class="iconbtn" id="btnImport" title="Import">⬆ Import</button>
+      <button class="iconbtn" id="btnImportRoam" title="Import Roam JSON">Roam</button>
     </div>
   `;
 
@@ -175,6 +176,18 @@ function bindEvents() {
     };
     input.click();
   });
+  document.getElementById('btnImportRoam')!.addEventListener('click', () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/json';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      try { await importRoamJson(file); alert('Roam import completed.'); }
+      catch (e) { alert('Roam import failed: ' + (e as Error).message); }
+    };
+    input.click();
+  });
   document.getElementById('btnBacklinks')!.addEventListener('click', () => toggleSidePanel());
   document.getElementById('closeSidePanel')!.addEventListener('click', () => toggleSidePanel());
   document.getElementById('btnGraph')!.addEventListener('click', () => showGraph());
@@ -196,6 +209,8 @@ function bindEvents() {
     else p.style.display = 'none';
   });
   document.getElementById('btnHistory')!.addEventListener('click', () => openVersionsModal());
+  // expose command helper
+  (window as any).__addBlockId = () => addBlockIdToCurrentLine();
 
   const searchInput = document.getElementById('searchInput') as HTMLInputElement;
   searchInput.addEventListener('input', () => { setSearch(searchInput.value); renderNoteList(); });
@@ -346,7 +361,44 @@ function openWikiTarget(target: string) {
 
 function updatePreview(content: string) {
   const pc = document.getElementById('previewContent')!;
-  pc.innerHTML = renderMarkdown(content);
+  pc.innerHTML = renderMarkdown(resolveRoamEmbeds(content));
+}
+
+function resolveRoamEmbeds(md: string): string {
+  // Build block id -> { title, snippet }
+  const blockMap = new Map<string, { title: string; snippet: string }>();
+  for (const note of getState().notes) {
+    for (const line of note.content.split('\n')) {
+      const m = line.match(/\^([A-Za-z0-9-]+)\s*$/);
+      if (m) {
+        const id = m[1];
+        const snippet = line.replace(/^\s*[-*+]\s*/, '').replace(/\s*\^[A-Za-z0-9-]+\s*$/, '').trim();
+        blockMap.set(id, { title: note.title, snippet });
+      }
+    }
+  }
+  // Transclusion ![[Target#^id]]
+  let out = md.replace(/!\[\[([^\]#]+)#\^([A-Za-z0-9-]+)(?:\|([^\]]*))?\]\]/g, (_m, target, id, alias) => {
+    const n = findNoteByTitle(target);
+    if (!n) return `![[${target}#^${id}]]`;
+    // find block
+    let snippet = '';
+    for (const line of n.content.split('\n')) {
+      if (new RegExp('\^' + id + '\\s*$').test(line)) {
+        snippet = line.replace(/^\s*[-*+]\s*/, '').replace(/\s*\^[A-Za-z0-9-]+\s*$/, '').trim();
+        break;
+      }
+    }
+    const label = alias || target;
+    return `> **${escapeHtml(label)}** — ${escapeHtml(snippet || '(block)')}  \n> _from ${escapeHtml(target)}#^${id}_`;
+  });
+  // Block references ((id)) -> link
+  out = out.replace(/\(\(([^)]+)\)\)/g, (_m, id) => {
+    const info = blockMap.get(id);
+    if (info) return `[[${info.title}#^${id}|^${id}]]`;
+    return `((${id}))`;
+  });
+  return out;
 }
 
 
@@ -372,7 +424,7 @@ function renderNoteList() {
         const start = Math.max(0, idx - 30);
         const end = Math.min(haystack.length, idx + q.length + 50);
         const raw = (n.title + '\n' + n.content).slice(start, end).replace(/\s+/g, ' ');
-        const hl = escapeHtml(raw).replace(new RegExp('(' + q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'ig'), '<mark>$1</mark>');
+        const hl = escapeHtml(raw).replace(new RegExp('(' + q.replace(/[.*+?^${}()|[\]\\]/g, '\$&') + ')', 'ig'), '<mark>$1</mark>');
         snippetHtml = `<div class="meta snippet">${(start > 0 ? '...' : '') + hl + (end < haystack.length ? '...' : '')}</div>`;
       }
     }
@@ -484,7 +536,7 @@ function renderSidePanel() {
     let mm: RegExpExecArray | null;
     while ((mm = re.exec(n.content))) {
       const text = mm[2].trim();
-      const slug = text.toLowerCase().replace(/[^\\w]+/g, '-').replace(/^-|-$/g, '') || 'heading';
+      const slug = text.toLowerCase().replace(/[^\w]+/g, '-').replace(/^-|-$/g, '') || 'heading';
       headingItems.push({ level: mm[1].length, text, id: 'h-' + slug + '-' + i });
       i++;
     }
@@ -778,6 +830,7 @@ function openCommandPalette() {
       { label: t('modeEdit'), hint: '', action: () => { setEditorMode('edit'); applyMode('edit'); } },
       { label: t('modePreview'), hint: '', action: () => { setEditorMode('preview'); applyMode('preview'); } },
       { label: t('modeSplit'), hint: '', action: () => { setEditorMode('split'); applyMode('split'); } },
+      { label: 'Add block reference ID', hint: '', action: () => addBlockIdToCurrentLine() },
     ].filter((c) => c.label.toLowerCase().includes(f));
     const notes = getState().notes.filter((n) => n.title.toLowerCase().includes(f)).slice(0, 12);
     const items: HTMLElement[] = [];
@@ -1320,6 +1373,73 @@ function openVersionsModal() {
     document.body.appendChild(backdrop);
     backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
   })();
+}
+
+function roamBlocksToMd(blocks: any[], depth = 0): string[] {
+  const out: string[] = [];
+  if (!Array.isArray(blocks)) return out;
+  for (const b of blocks) {
+    const str = typeof b === 'string' ? b : (b.string ?? b.str ?? b.text ?? '');
+    const uid = b.uid || b.id || '';
+    const suffix = uid ? ` ^${String(uid).replace(/[^A-Za-z0-9-]/g, '')}` : '';
+    out.push('  '.repeat(depth) + '- ' + String(str) + suffix);
+    if (Array.isArray(b.children)) out.push(...roamBlocksToMd(b.children, depth + 1));
+  }
+  return out;
+}
+
+async function importRoamJson(file: File): Promise<void> {
+  const data = JSON.parse(await file.text());
+  const pages = Array.isArray(data) ? data : (Array.isArray(data.pages) ? data.pages : []);
+  const handle = await getVaultHandle();
+  const permitted = handle ? await ensureVaultPermission(handle) : false;
+  for (const page of pages) {
+    const title = (page.title || page.name || 'Untitled').trim() || 'Untitled';
+    const lines = [];
+    lines.push('# ' + title);
+    lines.push('');
+    lines.push(...roamBlocksToMd(page.children || []));
+    const content = lines.join('\n').trim() + '\n';
+    const note = {
+      id: crypto.randomUUID(),
+      title,
+      content,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      order: Date.now(),
+    } as any;
+    if (handle && permitted) {
+      const safe = title.replace(/[\/:*?"<>|]/g, '-');
+      const path = await uniqueVaultPath(handle, safe);
+      await createVaultNote(handle, path, content);
+      note.path = path;
+    }
+    await db.notes.put(note);
+  }
+  await loadImages();
+  if (handle && permitted) await loadVaultImages(handle);
+  await initStore();
+  renderAll();
+}
+
+function addBlockIdToCurrentLine() {
+  const ta = document.getElementById('editorTextarea') as HTMLTextAreaElement;
+  if (!ta) return;
+  const pos = ta.selectionStart;
+  const lines = ta.value.split('\\n');
+  // find line index
+  let lineIndex = 0;
+  let acc = 0;
+  for (let i = 0; i < lines.length; i++) {
+    if (pos <= acc + lines[i].length) { lineIndex = i; break; }
+    acc += lines[i].length + 1;
+  }
+  if (/\\^[A-Za-z0-9-]+\\s*$/.test(lines[lineIndex])) return;
+  const id = crypto.randomUUID().slice(0, 8);
+  lines[lineIndex] = lines[lineIndex].trimEnd() + ' ^' + id;
+  ta.value = lines.join('\\n');
+  ta.selectionStart = ta.selectionEnd = pos + (' ^' + id).length;
+  ta.dispatchEvent(new Event('input'));
 }
 
 async function main() {

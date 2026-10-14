@@ -1,8 +1,9 @@
 import './style.css';
-import { initStore, getState, subscribe, createNote, updateNote, deleteNote, setActive, setSearch, setTheme, setEditorMode, getActiveNote, backlinksOf, findNoteByTitle, filteredNotes, openVault } from './store';
+import { initStore, getState, subscribe, createNote, updateNote, deleteNote, setActive, setSearch, setTheme, setEditorMode, getActiveNote, backlinksOf, findNoteByTitle, filteredNotes, openVault, setLanguage } from './store';
 import { renderMarkdown, extractWikiLinks, extractTags } from './markdown';
 import { THEMES } from './themes';
 import { saveSetting } from './db';
+import { t, availableLanguages } from './i18n';
 
 let saveTimer: any = null;
 let propsTimer: any = null;
@@ -16,16 +17,16 @@ function buildShell() {
   const tb = document.createElement('div');
   tb.className = 'topbar';
   tb.innerHTML = `
-    <button class="iconbtn" id="hamburger" title="Menu">☰</button>
-    <span class="brand">Cat Jam</span>
+    <button class="iconbtn" id="hamburger" title="${t('menu')}">☰</button>
+    <span class="brand">${t('brand')}</span>
     <div class="spacer"></div>
-    <button class="iconbtn" id="btnNew" title="New note (Ctrl+N)">＋</button>
-    <button class="iconbtn" id="btnBacklinks" title="Backlinks">↔</button>
-    <button class="iconbtn" id="btnGraph" title="Graph view">⬢</button>
-    <button class="iconbtn" id="btnPalette" title="Command palette (Ctrl+P)">⌘</button>
-    <button class="iconbtn" id="btnTasks" title="Tasks">☑</button>
-    <button class="iconbtn" id="btnTags" title="Tags">#</button>
-    <button class="iconbtn" id="btnSettings" title="Settings">⚙</button>
+    <button class="iconbtn" id="btnNew" title="${t('newNote')}">＋</button>
+    <button class="iconbtn" id="btnBacklinks" title="${t('backlinks')}">↔</button>
+    <button class="iconbtn" id="btnGraph" title="${t('graph')}">⬢</button>
+    <button class="iconbtn" id="btnPalette" title="${t('palette')}">⌘</button>
+    <button class="iconbtn" id="btnTasks" title="${t('tasks')}">☑</button>
+    <button class="iconbtn" id="btnTags" title="${t('tags')}">#</button>
+    <button class="iconbtn" id="btnSettings" title="${t('settings')}">⚙</button>
   `;
   app.appendChild(tb);
 
@@ -45,13 +46,13 @@ function buildShell() {
   sidebar.id = 'sidebar';
   sidebar.innerHTML = `
     <div class="sidebar-head">
-      <input class="search-input" id="searchInput" placeholder="Search notes…" />
+      <input class="search-input" id="searchInput" placeholder="${t('searchPlaceholder')}" />
     </div>
     <div class="note-list" id="noteList"></div>
     <div class="sidebar-foot">
-      <button class="iconbtn" id="btnSidebarNew" title="New note">＋ Note</button>
-      <button class="iconbtn" id="btnSidebarDaily" title="Daily note">📅 Daily</button>
-      <button class="iconbtn" id="btnOpenVault" title="Open vault folder">📁 Vault</button>
+      <button class="iconbtn" id="btnSidebarNew" title="${t('newNoteBtn')}">＋ ${t('newNoteBtn')}</button>
+      <button class="iconbtn" id="btnSidebarDaily" title="${t('dailyNote')}">📅 ${t('dailyNote')}</button>
+      <button class="iconbtn" id="btnOpenVault" title="${t('openVault')}">📁 ${t('openVault')}</button>
     </div>
   `;
 
@@ -60,19 +61,19 @@ function buildShell() {
   main.className = 'main';
   main.innerHTML = `
     <div class="editor-header" id="editorHeader">
-      <input class="title-input" id="titleInput" placeholder="Untitled" />
+      <input class="title-input" id="titleInput" placeholder="${t('untitled')}" />
       <div class="mode-toggle" id="modeToggle">
-        <button data-mode="edit">Edit</button>
-        <button data-mode="preview">Preview</button>
-        <button data-mode="split">Split</button>
+        <button data-mode="edit">${t('edit')}</button>
+        <button data-mode="preview">${t('preview')}</button>
+        <button data-mode="split">${t('split')}</button>
       </div>
-      <button class="iconbtn" id="btnDelete" title="Delete note">🗑</button>
-      <button class="iconbtn" id="btnProps" title="Properties" style="width:auto;padding:4px 8px;font-size:12px;">Props</button>
+      <button class="iconbtn" id="btnDelete" title="${t('deleteNote')}">🗑</button>
+      <button class="iconbtn" id="btnProps" title="${t('props')}" style="width:auto;padding:4px 8px;font-size:12px;">${t('props')}</button>
     </div>
     <div id="propsPanel" style="display:none;padding:8px 12px;border-bottom:1px solid var(--border);background:var(--panel);"></div>
     <div class="editor-body" id="editorBody">
       <div class="editor-pane" id="editorPane">
-        <textarea class="editor-textarea" id="editorTextarea" placeholder="Start writing… Use [[Wiki Links]] and #tags"></textarea>
+        <textarea class="editor-textarea" id="editorTextarea" placeholder="${t('editorPlaceholder')}"></textarea>
       </div>
       <div class="preview-pane" id="previewPane">
         <div class="markdown" id="previewContent"></div>
@@ -97,15 +98,15 @@ function buildShell() {
   side.id = 'sidePanel';
   side.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-      <h3 style="margin:0;">Backlinks</h3>
-      <button class="iconbtn" id="closeSidePanel" title="Close">✕</button>
+      <h3 style="margin:0;">${t('backlinksTitle')}</h3>
+      <button class="iconbtn" id="closeSidePanel" title="${t('close')}">✕</button>
     </div>
     <div id="backlinksList"></div>
-    <h3 style="margin-top:16px;">Outline</h3>
+    <h3 style="margin-top:16px;">${t('outline')}</h3>
     <div id="outlineList"></div>
-    <h3 style="margin-top:16px;">Outgoing links</h3>
+    <h3 style="margin-top:16px;">${t('outgoing')}</h3>
     <div id="outgoingList"></div>
-    <h3 style="margin-top:16px;">Tags</h3>
+    <h3 style="margin-top:16px;">${t('currentTags')}</h3>
     <div id="tagsList"></div>
   `;
   app.appendChild(side);
@@ -209,7 +210,7 @@ function newNoteAndRender() {
 }
 function dailyNote() {
   const d = new Date();
-  const title = `Daily ${d.toISOString().slice(0, 10)}`;
+  const title = `${t('dailyNote')} ${d.toISOString().slice(0, 10)}`;
   const existing = findNoteByTitle(title);
   if (existing) { setActive(existing.id); renderAll(); return; }
   createNote(title).then((n) => {
@@ -241,7 +242,7 @@ function renderNoteList() {
   list.innerHTML = '';
   const notes = filteredNotes();
   if (!notes.length) {
-    const h = document.createElement('div'); h.className = 'empty-hint'; h.textContent = getState().search ? 'No matches.' : 'No notes yet. Create one.'; list.appendChild(h); return;
+    const h = document.createElement('div'); h.className = 'empty-hint'; h.textContent = getState().search ? t('emptyNoMatch') : t('emptyNoNotes'); list.appendChild(h); return;
   }
   for (const n of notes) {
     const item = document.createElement('div');
@@ -311,7 +312,7 @@ function renderSidePanel() {
     }
   }
   if (!headingItems.length) {
-    outl.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">None</div>';
+    outl.innerHTML = `<div style="color:var(--text-muted);font-size:13px;">${t('none')}</div>`;
   } else {
     for (const h of headingItems) {
       const item = document.createElement('div');
@@ -347,7 +348,7 @@ function renderSidePanel() {
     item.addEventListener('click', () => openWikiTarget(l));
     ol.appendChild(item);
   }
-  if (!links.length) ol.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">None</div>';
+  if (!links.length) ol.innerHTML = `<div style="color:var(--text-muted);font-size:13px;">${t('none')}</div>`;
   // backlinks
   const bls = backlinksOf(n.title);
   for (const b of bls) {
@@ -357,11 +358,11 @@ function renderSidePanel() {
     item.addEventListener('click', () => { setActive(b.id); renderAll(); });
     bl.appendChild(item);
   }
-  if (!bls.length) bl.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">None</div>';
+  if (!bls.length) bl.innerHTML = `<div style="color:var(--text-muted);font-size:13px;">${t('none')}</div>`;
   // tags
   const tags = extractTags(n.content);
   if (!tags.length) {
-    tl.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">None</div>';
+    tl.innerHTML = `<div style="color:var(--text-muted);font-size:13px;">${t('none')}</div>`;
   } else {
     const wrap = document.createElement('div');
     wrap.style.display = 'flex';
@@ -511,18 +512,22 @@ function openSettings() {
   backdrop.className = 'modal-backdrop';
   const modal = document.createElement('div');
   modal.className = 'modal';
-  modal.innerHTML = `<h3>Settings</h3>
+  modal.innerHTML = `<h3>${t('settingsTitle')}</h3>
     <div style="margin-bottom:12px;">
-      <div style="font-size:13px;color:var(--text-muted);margin-bottom:6px;">Theme</div>
+      <div style="font-size:13px;color:var(--text-muted);margin-bottom:6px;">${t('theme')}</div>
       <div class="row" id="themeRow"></div>
     </div>
     <div style="margin-bottom:12px;">
-      <div style="font-size:13px;color:var(--text-muted);margin-bottom:6px;">Font size</div>
+      <div style="font-size:13px;color:var(--text-muted);margin-bottom:6px;">${t('language')}</div>
+      <select id="languageSelect" class="search-input" style="width:100%;"></select>
+    </div>
+    <div style="margin-bottom:12px;">
+      <div style="font-size:13px;color:var(--text-muted);margin-bottom:6px;">${t('fontSize')}</div>
       <input type="range" min="12" max="24" value="${getState().settings.fontSize}" id="fontSizeRange" />
       <span id="fontSizeLabel">${getState().settings.fontSize}px</span>
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end;">
-      <button class="iconbtn" id="closeSettings">Close</button>
+      <button class="iconbtn" id="closeSettings">${t('close')}</button>
     </div>`;
   backdrop.appendChild(modal);
   document.body.appendChild(backdrop);
@@ -538,6 +543,23 @@ function openSettings() {
     });
     row.appendChild(card);
   }
+  const langSelect = modal.querySelector('#languageSelect') as HTMLSelectElement;
+  for (const l of availableLanguages()) {
+    const opt = document.createElement('option');
+    opt.value = l.id;
+    opt.textContent = l.label;
+    if (l.id === getState().settings.language) opt.selected = true;
+    langSelect.appendChild(opt);
+  }
+  langSelect.addEventListener('change', async () => {
+    await setLanguage(langSelect.value as 'en' | 'tr');
+    // rebuild shell to apply language
+    backdrop.remove();
+    buildShell();
+    await initStore();
+    renderAll();
+  });
+
   const range = modal.querySelector('#fontSizeRange') as HTMLInputElement;
   const label = modal.querySelector('#fontSizeLabel') as HTMLSpanElement;
   range.addEventListener('input', () => {
@@ -559,7 +581,7 @@ function openCommandPalette() {
   backdrop.className = 'cmd-backdrop';
   const panel = document.createElement('div');
   panel.className = 'cmd-panel';
-  panel.innerHTML = `<input class="cmd-input" id="cmdInput" placeholder="Type a command or note name…" autocomplete="off" />
+  panel.innerHTML = `<input class="cmd-input" id="cmdInput" placeholder="${t('commandPlaceholder')}" autocomplete="off" />
     <div class="cmd-list" id="cmdList"></div>`;
   backdrop.appendChild(panel);
   document.body.appendChild(backdrop);
@@ -570,14 +592,14 @@ function openCommandPalette() {
     list.innerHTML = '';
     const f = filter.toLowerCase();
     const cmds = [
-      { label: 'New note', hint: 'Ctrl+N', action: () => { newNoteAndRender(); } },
-      { label: 'Daily note', hint: '', action: () => dailyNote() },
-      { label: 'Toggle graph view', hint: '', action: () => showGraph() },
-      { label: 'Toggle backlinks', hint: '', action: () => toggleSidePanel() },
-      { label: 'Settings', hint: '', action: () => openSettings() },
-      { label: 'Switch to edit mode', hint: '', action: () => { setEditorMode('edit'); applyMode('edit'); } },
-      { label: 'Switch to preview mode', hint: '', action: () => { setEditorMode('preview'); applyMode('preview'); } },
-      { label: 'Switch to split mode', hint: '', action: () => { setEditorMode('split'); applyMode('split'); } },
+      { label: t('newNoteCmd'), hint: 'Ctrl+N', action: () => { newNoteAndRender(); } },
+      { label: t('dailyNoteCmd'), hint: '', action: () => dailyNote() },
+      { label: t('toggleGraph'), hint: '', action: () => showGraph() },
+      { label: t('toggleBacklinks'), hint: '', action: () => toggleSidePanel() },
+      { label: t('openSettings'), hint: '', action: () => openSettings() },
+      { label: t('modeEdit'), hint: '', action: () => { setEditorMode('edit'); applyMode('edit'); } },
+      { label: t('modePreview'), hint: '', action: () => { setEditorMode('preview'); applyMode('preview'); } },
+      { label: t('modeSplit'), hint: '', action: () => { setEditorMode('split'); applyMode('split'); } },
     ].filter((c) => c.label.toLowerCase().includes(f));
     const notes = getState().notes.filter((n) => n.title.toLowerCase().includes(f)).slice(0, 12);
     const items: HTMLElement[] = [];
@@ -661,11 +683,11 @@ function openTasksModal() {
   modal.className = 'modal';
   modal.style.maxWidth = '640px';
   modal.innerHTML = `
-    <h3>Tasks</h3>
+    <h3>${t('tasksTitle')}</h3>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
-      <button class="iconbtn" data-taskfilter="all" style="width:auto;height:auto;padding:4px 10px;font-size:12px;">All</button>
-      <button class="iconbtn" data-taskfilter="active" style="width:auto;height:auto;padding:4px 10px;font-size:12px;">Active</button>
-      <button class="iconbtn" data-taskfilter="done" style="width:auto;height:auto;padding:4px 10px;font-size:12px;">Done</button>
+      <button class="iconbtn" data-taskfilter="all" style="width:auto;height:auto;padding:4px 10px;font-size:12px;">${t('all')}</button>
+      <button class="iconbtn" data-taskfilter="active" style="width:auto;height:auto;padding:4px 10px;font-size:12px;">${t('active')}</button>
+      <button class="iconbtn" data-taskfilter="done" style="width:auto;height:auto;padding:4px 10px;font-size:12px;">${t('done')}</button>
     </div>
     <div id="tasksList" style="max-height:50vh;overflow:auto;"></div>
   `;
@@ -691,7 +713,7 @@ function openTasksModal() {
   function render() {
     const tasks = collect().filter((t) => (filter === 'all' ? true : filter === 'active' ? !t.done : t.done));
     listEl.innerHTML = '';
-    if (!tasks.length) { listEl.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">No tasks.</div>'; return; }
+    if (!tasks.length) { listEl.innerHTML = `<div style="color:var(--text-muted);font-size:13px;">${t('noTasks')}</div>`; return; }
     for (const t of tasks) {
       const row = document.createElement('div');
       row.style.display = 'flex';
@@ -780,7 +802,7 @@ function openTagsModal() {
     }
   }
   const tags = [...counts.keys()].sort();
-  if (!tags.length) { list.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">No tags found.</div>'; }
+  if (!tags.length) { list.innerHTML = `<div style="color:var(--text-muted);font-size:13px;">${t('noTags')}</div>`; }
   else {
     for (const t of tags) {
       const row = document.createElement('div');
@@ -905,7 +927,7 @@ function renderProps() {
   addBtn.style.width = 'auto';
   addBtn.style.padding = '4px 10px';
   addBtn.style.fontSize = '12px';
-  addBtn.textContent = '+ Add property';
+  addBtn.textContent = `+ ${t('addProperty')}`;
   addBtn.addEventListener('click', () => {
     const key = prompt('Property name:');
     if (!key || Object.prototype.hasOwnProperty.call(meta, key)) return;
@@ -922,7 +944,7 @@ async function main() {
   // apply settings font size
   document.documentElement.style.setProperty('--font-size', getState().settings.fontSize + 'px');
   if (!getState().notes.length) {
-    await createNote('Welcome');
+    await createNote(t('welcome'));
     const n = getActiveNote()!;
     await updateNote(n.id, { content: WELCOME });
   }

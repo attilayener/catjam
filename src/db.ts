@@ -28,6 +28,7 @@ export async function loadSettings(): Promise<AppSettings> {
     theme: map.theme ?? 'minimal-dark',
     editorMode: map.editorMode ?? 'split',
     fontSize: map.fontSize ?? 16,
+    language: map.language ?? 'tr',
   };
 }
 

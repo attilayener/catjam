@@ -2,6 +2,7 @@ import { db, loadSettings, saveSetting } from './db';
 import type { Note, AppSettings } from './types';
 import { applyTheme } from './themes';
 import { extractWikiLinks } from './markdown';
+import { setLanguage as applyLanguage } from './i18n';
 import { getVaultHandle, importVault, createVaultNote, saveNoteToVault, deleteVaultFile, ensureVaultPermission, openVaultPicker, uniqueVaultPath } from './vault';
 
 type Listener = () => void;
@@ -16,7 +17,7 @@ interface State {
 const state: State = {
   notes: [],
   activeId: null,
-  settings: { theme: 'minimal-dark', editorMode: 'split', fontSize: 16 },
+  settings: { theme: 'minimal-dark', editorMode: 'split', fontSize: 16, language: 'tr' },
   search: '',
   ready: false,
 };
@@ -36,6 +37,7 @@ function emit() {
 export async function initStore() {
   state.settings = await loadSettings();
   applyTheme(state.settings.theme);
+  applyLanguage(state.settings.language as any);
   // vault sync if present
   const handle = await getVaultHandle();
   if (handle && (await ensureVaultPermission(handle))) {
@@ -122,6 +124,13 @@ export async function setTheme(id: string) {
 export async function setEditorMode(mode: 'edit' | 'preview' | 'split') {
   state.settings.editorMode = mode;
   await saveSetting('editorMode', mode);
+  emit();
+}
+
+export async function setLanguage(lang: 'en' | 'tr') {
+  state.settings.language = lang;
+  applyLanguage(lang);
+  await saveSetting('language', lang);
   emit();
 }
 

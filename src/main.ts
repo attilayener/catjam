@@ -1087,15 +1087,16 @@ function openTagsModal() {
   const tags = [...counts.keys()].sort();
   if (!tags.length) { list.innerHTML = `<div style="color:var(--text-muted);font-size:13px;">${t('noTags')}</div>`; }
   else {
-    for (const t of tags) {
+    for (const tg of tags) {
       const row = document.createElement('div');
       row.className = 'backlink-item';
       row.style.display = 'flex';
       row.style.justifyContent = 'space-between';
-      row.innerHTML = `<span>#${escapeHtml(t)}</span><span style="color:var(--text-muted);font-size:12px;">${counts.get(t)}</span>`;
+      row.style.paddingLeft = (tg.split('/').length - 1) * 12 + 8 + 'px';
+      row.innerHTML = `<span>#${escapeHtml(tg)}</span><span style="color:var(--text-muted);font-size:12px;">${counts.get(tg)}</span>`;
       row.addEventListener('click', () => {
-        setSearch('#' + t);
-        (document.getElementById('searchInput') as HTMLInputElement).value = '#' + t;
+        setSearch('#' + tg);
+        (document.getElementById('searchInput') as HTMLInputElement).value = '#' + tg;
         renderNoteList();
         backdrop.remove();
       });
@@ -1183,19 +1184,39 @@ function renderProps() {
     label.style.minWidth = '120px';
     label.style.color = 'var(--text-muted)';
     label.style.fontSize = '13px';
-    const input = document.createElement('input');
-    input.className = 'search-input';
-    input.style.flex = '1';
-    input.value = Array.isArray(v) ? v.join(', ') : String(v ?? '');
-    input.addEventListener('input', () => {
-      let val: any = input.value;
-      if (val.includes(',')) val = val.split(',').map((x: string) => x.trim()).filter(Boolean);
-      if (val === 'true') val = true;
-      else if (val === 'false') val = false;
-      else if (val !== '' && !isNaN(Number(val)) && !Array.isArray(val)) val = Number(val);
-      meta[k] = val;
-      updatePropsContent(meta, panel.dataset.body || body);
-    });
+    const isArray = Array.isArray(v);
+    const isBool = typeof v === 'boolean';
+    const isNum = typeof v === 'number' && !isArray;
+    const isDate = /date|created|updated/i.test(k) || (typeof v === 'string' && /^\\d{4}-\\d{2}-\\d{2}/.test(v));
+    let input: HTMLInputElement;
+    if (isBool) {
+      input = document.createElement('input');
+      input.type = 'checkbox';
+      input.checked = v;
+      input.addEventListener('change', () => { meta[k] = input.checked; updatePropsContent(meta, panel.dataset.body || body); });
+    } else {
+      input = document.createElement('input');
+      input.className = 'search-input';
+      input.style.flex = '1';
+      if (isNum) input.type = 'number';
+      else if (isDate) input.type = 'date';
+      if (isArray) input.placeholder = 'comma separated';
+      input.value = isArray ? v.join(', ') : String(v ?? '');
+      if (isDate && typeof v === 'string') {
+        const m = v.match(/^\\d{4}-\\d{2}-\\d{2}/);
+        if (m) input.value = m[0];
+      }
+      input.addEventListener('input', () => {
+        let val: any = input.value;
+        if (isArray || val.includes(',')) val = val.split(',').map((x: string) => x.trim()).filter(Boolean);
+        if (val === 'true') val = true;
+        else if (val === 'false') val = false;
+        else if (!isArray && !Array.isArray(val) && val !== '' && !isNaN(Number(val)) && input.type === 'number') val = Number(val);
+        else if (isDate && val) val = new Date(val).toISOString();
+        meta[k] = val;
+        updatePropsContent(meta, panel.dataset.body || body);
+      });
+    }
     const del = document.createElement('button');
     del.className = 'iconbtn';
     del.textContent = '×';

@@ -275,3 +275,9 @@ body.focus-mode .sidebar, body.focus-mode .topbar, body.focus-mode .side-panel, 
 body.focus-mode .layout { grid-template-columns: 1fr; }
 body.focus-mode .main { max-width: 900px; margin: 0 auto; }
 
+
+.preview-pane .collapse-toggle { display:inline-block; width:14px; text-align:center; }
+.preview-pane li.collapsed > ul, .preview-pane li.collapsed > ol { display:none; }
+.block-prop { background: var(--accent-soft); border-radius:4px; padding:0 4px; font-size:0.9em; }
+.prop-key { color: var(--accent); font-weight:600; }
+

@@ -27,16 +27,22 @@ export function extractTags(content: string): string[] {
 // Convert wiki links to placeholder anchors before marked runs, so they survive.
 export function preprocessMath(md: string): string {
   // block math
-  let out = md.replace(/^\\$\\$\\n([\\s\\S]+?)\\n\\$\\$$/gm, (_m, expr) => {
+  let out = md.replace(/^\$\$\n([\s\S]+?)\n\$\$$/gm, (_m, expr) => {
     try { return katex.renderToString(expr.trim(), { displayMode: true, throwOnError: false }); }
     catch { return _m; }
   });
   // inline math (single $, not $$)
-  out = out.replace(/(^|[^$])\\$([^$\\n]+)\\$(?![\\d])/g, (m, pre, expr) => {
+  out = out.replace(/(^|[^$])\$([^$\n]+)\$(?![\d])/g, (m, pre, expr) => {
     try { return pre + katex.renderToString(expr.trim(), { displayMode: false, throwOnError: false }); }
     catch { return m; }
   });
   return out;
+}
+
+function preprocessBlockProps(md: string): string {
+  return md.replace(/^(\s*[-*+ ]*)([A-Za-z0-9_-]+)::\s*(.+)$/gm, (_m, prefix, key, val) => {
+    return `${prefix}<span class="block-prop"><span class="prop-key">${escapeHtml(key)}</span>: ${escapeHtml(val)}</span>`;
+  });
 }
 
 function preprocessCallouts(md: string): string {
@@ -106,8 +112,9 @@ export function renderMarkdown(md: string): string {
   headingSeq = 0;
   const resolved = resolveImagePlaceholders(md);
   const mathed = preprocessMath(resolved);
-  const mermaided = mathed.replace(/```mermaid\\n([\\s\\S]*?)```/g, '<div class="mermaid">$1</div>');
-  const called = preprocessCallouts(mermaided);
+  const mermaided = mathed.replace(/```mermaid\n([\s\S]*?)```/g, '<div class="mermaid">$1</div>');
+  const proped = preprocessBlockProps(mermaided);
+  const called = preprocessCallouts(proped);
   const withLinks = preprocessWikiLinks(called);
   const renderer = new marked.Renderer();
   renderer.heading = ({ depth, text }) => {

@@ -400,6 +400,26 @@ function openWikiTarget(target: string) {
 function updatePreview(content: string) {
   const pc = document.getElementById('previewContent')!;
   pc.innerHTML = renderMarkdown(resolveRoamEmbeds(content));
+  // Outliner collapse toggles
+  requestAnimationFrame(() => {
+    pc.querySelectorAll('li').forEach((li) => {
+      const hasChildList = li.querySelector(':scope > ul, :scope > ol');
+      if (!hasChildList || li.querySelector('.collapse-toggle')) return;
+      const toggle = document.createElement('span');
+      toggle.className = 'collapse-toggle';
+      toggle.textContent = '▼';
+      toggle.style.cursor = 'pointer';
+      toggle.style.marginRight = '4px';
+      toggle.style.userSelect = 'none';
+      li.insertBefore(toggle, li.firstChild);
+      toggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const collapsed = li.classList.toggle('collapsed');
+        toggle.textContent = collapsed ? '▶' : '▼';
+      });
+    });
+    try { (window as any).__mermaidRun?.(); } catch (e) {}
+  });
   requestAnimationFrame(async () => {
     try {
       const { default: mermaid } = await import('mermaid');

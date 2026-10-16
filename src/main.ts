@@ -135,6 +135,8 @@ function buildShell() {
     <div id="outgoingList"></div>
     <h3 style="margin-top:16px;">${t('currentTags')}</h3>
     <div id="tagsList"></div>
+    <h3 style="margin-top:16px;">${t('unlinkedRefs')}</h3>
+    <div id="unlinkedList"></div>
   `;
   app.appendChild(side);
 
@@ -472,6 +474,16 @@ function resolveRoamEmbeds(md: string): string {
     if (info) return `[[${info.title}#^${id}|^${id}]]`;
     return `((${id}))`;
   });
+  // Logseq/Obsidian page embeds ![[Page]] (whole-note transclusion; images handled elsewhere)
+  const self = getActiveNote();
+  out = out.replace(/!\[\[([^\]|#]+)\]\]/g, (_m, name) => {
+    const clean = String(name).trim();
+    if (/\.(png|jpe?g|gif|webp|svg|bmp|pdf)$/i.test(clean)) return _m;
+    const target = findNoteByTitle(clean);
+    if (!target || (self && target.id === self.id)) return _m;
+    const body = target.content.split('\n').map((l) => '> ' + l).join('\n');
+    return `> [!info] ${clean}\n${body}`;
+  });
   // Roam queries {{[[query]]: term}}
   out = out.replace(/\{\{\[\[query\]\]:\s*(.*?)\}\}/g, (_m, term) => {
     const t = String(term).trim().toLowerCase();
@@ -647,7 +659,8 @@ function renderSidePanel() {
   const ol = document.getElementById('outgoingList')!;
   const tl = document.getElementById('tagsList')!;
   const outl = document.getElementById('outlineList')!;
-  bl.innerHTML = ''; ol.innerHTML = ''; tl.innerHTML = ''; outl.innerHTML = '';
+  const ul = document.getElementById('unlinkedList')!;
+  bl.innerHTML = ''; ol.innerHTML = ''; tl.innerHTML = ''; outl.innerHTML = ''; ul.innerHTML = '';
   if (!n) return;
   const links = extractWikiLinks(n.content);
   // outline
@@ -736,6 +749,19 @@ function renderSidePanel() {
     }
     tl.appendChild(wrap);
   }
+  // unlinked references (mentions without [[ ]])
+  const lowerTitle = n.title.toLowerCase();
+  const unlinked = getState().notes.filter((nb) => nb.id !== n.id && nb.content.toLowerCase().includes(lowerTitle) && !nb.content.toLowerCase().includes('[[' + lowerTitle + ']]'));
+  for (const b of unlinked) {
+    const item = document.createElement('div');
+    item.className = 'backlink-item';
+    const line = b.content.split('\n').find((ln) => ln.toLowerCase().includes(lowerTitle)) || '';
+    const trimmed = line.trim().slice(0, 90);
+    item.innerHTML = `<div style="color:var(--text-h);font-weight:500;">${escapeHtml(b.title)}</div>${trimmed ? `<div style="color:var(--text-muted);font-size:11px;margin-top:2px;">${escapeHtml(trimmed)}</div>` : ''}`;
+    item.addEventListener('click', () => { setActive(b.id); renderAll(); });
+    ul.appendChild(item);
+  }
+  if (!unlinked.length) ul.innerHTML = `<div style="color:var(--text-muted);font-size:13px;">${t('none')}</div>`;
 }
 
 function renderAll() {
@@ -1098,13 +1124,20 @@ function openTasksModal() {
   const listEl = modal.querySelector('#tasksList') as HTMLDivElement;
 
   function collect() {
-    const out: { noteId: string; noteTitle: string; lineIndex: number; done: boolean; text: string }[] = [];
+    const out: { noteId: string; noteTitle: string; lineIndex: number; done: boolean; text: string; state: string }[] = [];
     for (const note of getState().notes) {
       const lines = note.content.split('\n');
       lines.forEach((line, idx) => {
         const m = line.match(/^([\t ]*[-*+] \[)([ xX])(\] .*)$/);
         if (m) {
-          out.push({ noteId: note.id, noteTitle: note.title, lineIndex: idx, done: m[2].toLowerCase() === 'x', text: m[3].slice(2).trim() || m[3].trim() });
+          out.push({ noteId: note.id, noteTitle: note.title, lineIndex: idx, done: m[2].toLowerCase() === 'x', text: m[3].slice(2).trim() || m[3].trim(), state: 'checkbox' });
+          return;
+        }
+        // Logseq task states: - NOW xx, TODO xx, DOING xx, LATER xx, DONE xx
+        const ls = line.match(/^[\t ]*(?:[-*+]\s+)?\s*(NOW|DOING|TODO|LATER|DONE)\s+(.+)$/i);
+        if (ls) {
+          const stateRaw = ls[1].toUpperCase();
+          out.push({ noteId: note.id, noteTitle: note.title, lineIndex: idx, done: stateRaw === 'DONE', text: ls[2].trim(), state: stateRaw });
         }
       });
     }
@@ -1129,12 +1162,31 @@ function openTasksModal() {
         const note = getState().notes.find((n) => n.id === t.noteId);
         if (!note) return;
         const lines = note.content.split('\n');
-        const mm = lines[t.lineIndex]?.match(/^([\t ]*[-*+] \[)([ xX])(\].*)$/);
-        if (!mm) return;
-        lines[t.lineIndex] = `${mm[1]}${cb.checked ? 'x' : ' '}${mm[3]}`;
+        if (t.state === 'checkbox') {
+          const mm = lines[t.lineIndex]?.match(/^([\t ]*[-*+] \[)([ xX])(\].*)$/);
+          if (!mm) return;
+          lines[t.lineIndex] = `${mm[1]}${cb.checked ? 'x' : ' '}${mm[3]}`;
+        } else {
+          const mm = lines[t.lineIndex]?.match(/^([\t ]*(?:[-*+]\s+)?\s*)(NOW|DOING|TODO|LATER|DONE)(\s+.*)$/i);
+          if (!mm) return;
+          const next = cb.checked ? 'DONE' : (t.state === 'DONE' ? 'NOW' : t.state);
+          lines[t.lineIndex] = `${mm[1]}${next}${mm[3]}`;
+        }
         await updateNote(note.id, { content: lines.join('\n') });
         render();
       });
+      if (t.state !== 'checkbox') {
+        const chip = document.createElement('span');
+        chip.textContent = t.state;
+        chip.style.fontSize = '11px';
+        chip.style.fontWeight = '600';
+        chip.style.padding = '2px 8px';
+        chip.style.borderRadius = '4px';
+        const colors: Record<string, string> = { NOW: '#f59e0b', DOING: '#3b82f6', TODO: '#94a3b8', LATER: '#a78bfa', DONE: '#22c55e' };
+        chip.style.background = (colors[t.state] || '#888') + '33';
+        chip.style.color = colors[t.state] || '#888';
+        row.appendChild(chip);
+      }
       const text = document.createElement('span');
       text.style.flex = '1';
       text.style.color = t.done ? 'var(--text-muted)' : 'var(--text)';

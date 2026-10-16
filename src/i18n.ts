@@ -57,6 +57,7 @@ const dict: Record<Lang, Record<string, string>> = {
     'dropHint': 'Drop file to insert into note',
     'favorites': 'Favorites',
     'favoriteToggle': 'Toggle favorite',
+    'unlinkedRefs': 'Unlinked references',
   },
   tr: {
     'brand': 'Cat Jam',
@@ -114,6 +115,7 @@ const dict: Record<Lang, Record<string, string>> = {
     'dropHint': 'Dosyayı buraya bırak (nota ekle)',
     'favorites': 'Favoriler',
     'favoriteToggle': 'Favorilere ekle/çıkar',
+    'unlinkedRefs': 'Bağlantısız referanslar',
   },
 };
 

@@ -55,6 +55,8 @@ const dict: Record<Lang, Record<string, string>> = {
     'welcome': 'Welcome',
     'deleteConfirm': 'Delete "{title}"?',
     'dropHint': 'Drop file to insert into note',
+    'favorites': 'Favorites',
+    'favoriteToggle': 'Toggle favorite',
   },
   tr: {
     'brand': 'Cat Jam',
@@ -110,6 +112,8 @@ const dict: Record<Lang, Record<string, string>> = {
     'welcome': 'Hoş geldin',
     'deleteConfirm': '"{title}" silinsin mi?',
     'dropHint': 'Dosyayı buraya bırak (nota ekle)',
+    'favorites': 'Favoriler',
+    'favoriteToggle': 'Favorilere ekle/çıkar',
   },
 };
 

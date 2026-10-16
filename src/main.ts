@@ -13,6 +13,7 @@ let suggestState: { triggerStart: number; items: { label: string; insert: string
 let groupByFolder = false;
 let lastViewedId: string | null = null;
 let recentNoteIds: string[] = [];
+let favorites: string[] = [];
 try { recentNoteIds = JSON.parse(localStorage.getItem('catjam:recent') || '[]'); } catch { recentNoteIds = []; }
 function markRecent(id: string) {
   recentNoteIds = [id, ...recentNoteIds.filter((x) => x !== id)].slice(0, 12);
@@ -90,6 +91,7 @@ function buildShell() {
         <button data-mode="preview">${t('preview')}</button>
         <button data-mode="split">${t('split')}</button>
       </div>
+      <button class="iconbtn" id="btnStar" title="${t('favoriteToggle')}">☆</button>
       <button class="iconbtn" id="btnDelete" title="${t('deleteNote')}">🗑</button>
       <button class="iconbtn" id="btnProps" title="${t('props')}" style="width:auto;padding:4px 8px;font-size:12px;">${t('props')}</button>
       <button class="iconbtn" id="btnHistory" title="History" style="width:auto;padding:4px 8px;font-size:12px;">History</button>
@@ -213,6 +215,13 @@ function bindEvents() {
   document.getElementById('btnFocus')!.addEventListener('click', () => document.body.classList.toggle('focus-mode'));
   document.getElementById('exitFocus')!.addEventListener('click', () => document.body.classList.remove('focus-mode'));
   document.getElementById('btnSettings')!.addEventListener('click', () => openSettings());
+  document.getElementById('btnStar')!.addEventListener('click', async () => {
+    const n = getActiveNote(); if (!n) return;
+    favorites = favorites.includes(n.id) ? favorites.filter((x) => x !== n.id) : [n.id, ...favorites];
+    await saveSetting('favorites', favorites);
+    renderEditor();
+    renderNoteList();
+  });
   document.getElementById('btnDelete')!.addEventListener('click', async () => {
     const n = getActiveNote(); if (!n) return;
     if (!confirm(`Delete "${n.title}"?`)) return;
@@ -470,6 +479,29 @@ function resolveRoamEmbeds(md: string): string {
     if (!matches.length) return '_(no results)_';
     return matches.map((n) => `- [[${n.title}]]`).join('\n');
   });
+  // Logseq simple queries: {{query "term"}}, {{query [[Page]]}}, {{query (and [[a]] [[b]])}}, {{query (or "x" [[y]])}}
+  out = out.replace(/\{\{query\s+([\s\S]*?)\}\}/gi, (_m, innerRaw) => {
+    const inner = String(innerRaw).trim();
+    const isOr = /\(\s*or\b/i.test(inner);
+    const pages: string[] = [];
+    const terms: string[] = [];
+    let pm: RegExpExecArray | null;
+    const pageRe = /\[\[([^\]]+)\]\]/g;
+    while ((pm = pageRe.exec(inner))) pages.push(pm[1].trim().toLowerCase());
+    const termRe = /"([^"]+)"/g;
+    let tm: RegExpExecArray | null;
+    while ((tm = termRe.exec(inner))) terms.push(tm[1].trim().toLowerCase());
+    if (!pages.length && !terms.length) return '_(empty query)_';
+    const matches = getState().notes.filter((n) => {
+      const hay = (n.title + '\n' + n.content).toLowerCase();
+      const hasPage = (p: string) => hay.includes('[[' + p + ']]') || hay.includes('#' + p);
+      const hasTerm = (s: string) => hay.includes(s);
+      if (isOr) return [...pages, ...terms].some((x) => hay.includes('[[' + x + ']]') || hay.includes('#' + x) || hay.includes(x));
+      return pages.every(hasPage) && terms.every(hasTerm);
+    });
+    if (!matches.length) return '_(no results)_';
+    return matches.slice(0, 50).map((n) => `- [[${n.title}]]`).join('\n');
+  });
   return out;
 }
 
@@ -535,6 +567,17 @@ function renderNoteList() {
   };
 
   if (groupByFolder) {
+    const favs = favorites.map((id) => getState().notes.find((n) => n.id === id)).filter(Boolean) as any[];
+    if (favs.length && !q) {
+      const fh = document.createElement('div');
+      fh.className = 'folder-header';
+      fh.textContent = '⭐ ' + t('favorites');
+      list.appendChild(fh);
+      for (const n of favs) renderOne(n);
+      const sep = document.createElement('div');
+      sep.style.height = '6px';
+      list.appendChild(sep);
+    }
     const groups = new Map<string, any[]>();
     for (const n of notes) {
       const key = n.folder || '';
@@ -582,6 +625,12 @@ function renderEditor() {
   }
   titleInput.value = n.title;
   textarea.value = n.content;
+  const star = document.getElementById('btnStar') as HTMLButtonElement | null;
+  if (star) {
+    const isFav = favorites.includes(n.id);
+    star.textContent = isFav ? '★' : '☆';
+    star.classList.toggle('active', isFav);
+  }
   updatePreview(n.content);
   // mode
   const mode = getState().settings.editorMode;
@@ -657,7 +706,8 @@ function renderSidePanel() {
   for (const b of bls) {
     const item = document.createElement('div');
     item.className = 'backlink-item';
-    const snippetLine = b.content.split('\n').find((ln) => /\\[\\[[^\\]]*\\]\\]/g.test(ln) && ln.toLowerCase().includes('[[' + n.title.toLowerCase() + ']]')) || b.content.split('\n').find((ln) => ln.toLowerCase().includes(n.title.toLowerCase())) || '';
+    const lower = n.title.toLowerCase();
+    const snippetLine = b.content.split('\n').find((ln) => /\[\[[^\]]*\]\]/.test(ln) && ln.toLowerCase().includes(lower)) || b.content.split('\n').find((ln) => ln.toLowerCase().includes(lower)) || '';
     const trimmed = snippetLine.trim().slice(0, 90);
     item.innerHTML = `<div style="color:var(--text-h);font-weight:500;">${escapeHtml(b.title)}</div>${trimmed ? `<div style="color:var(--text-muted);font-size:11px;margin-top:2px;">${escapeHtml(trimmed)}</div>` : ''}`;
     item.addEventListener('click', () => { setActive(b.id); renderAll(); });
@@ -1255,7 +1305,7 @@ function renderProps() {
     const isArray = Array.isArray(v);
     const isBool = typeof v === 'boolean';
     const isNum = typeof v === 'number' && !isArray;
-    const isDate = /date|created|updated/i.test(k) || (typeof v === 'string' && /^\\d{4}-\\d{2}-\\d{2}/.test(v));
+    const isDate = /date|created|updated/i.test(k) || (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v));
     let input: HTMLInputElement;
     if (isBool) {
       input = document.createElement('input');
@@ -1271,7 +1321,7 @@ function renderProps() {
       if (isArray) input.placeholder = 'comma separated';
       input.value = isArray ? v.join(', ') : String(v ?? '');
       if (isDate && typeof v === 'string') {
-        const m = v.match(/^\\d{4}-\\d{2}-\\d{2}/);
+        const m = v.match(/^\d{4}-\d{2}-\d{2}/);
         if (m) input.value = m[0];
       }
       input.addEventListener('input', () => {
@@ -1575,7 +1625,7 @@ function addBlockIdToCurrentLine() {
     if (pos <= acc + lines[i].length) { lineIndex = i; break; }
     acc += lines[i].length + 1;
   }
-  if (/\\^[A-Za-z0-9-]+\\s*$/.test(lines[lineIndex])) return;
+  if (/\^[A-Za-z0-9-]+\s*$/.test(lines[lineIndex])) return;
   const id = crypto.randomUUID().slice(0, 8);
   lines[lineIndex] = lines[lineIndex].trimEnd() + ' ^' + id;
   ta.value = lines.join('\n');
@@ -1605,6 +1655,10 @@ function fuzzyScore(text: string, query: string): number {
 async function main() {
   buildShell();
   await initStore();
+  try {
+    const favRow = await db.settings.get('favorites');
+    if (favRow && Array.isArray(favRow.value)) favorites = favRow.value.filter((id: string) => getState().notes.some((n) => n.id === id));
+  } catch { favorites = []; }
   // apply settings font size
   document.documentElement.style.setProperty('--font-size', getState().settings.fontSize + 'px');
   if (!getState().notes.length) {

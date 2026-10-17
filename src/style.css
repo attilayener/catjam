@@ -463,6 +463,10 @@ body.focus-mode #catMascot { display: none; }
 .note-item.selected { background: var(--accent-soft); }
 .note-item .sel-cb { margin-right: 6px; accent-color: var(--accent); cursor: pointer; }
 
+/* 🃏 quiz derece butonları */
+.grade-btn:hover { background: var(--accent-soft) !important; color: var(--accent) !important; }
+.grade-btn { color: var(--text-h); }
+
 /* 🎞 slayt modu */
 .slides-overlay {
   position: fixed; inset: 0; z-index: 9000;

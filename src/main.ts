@@ -231,6 +231,7 @@ function buildShell() {
           <button class="iconbtn" id="btnWeekly" title="${t('weeklyReport')}">📊 ${t('weeklyReport')}</button>
           <button class="iconbtn" id="btnStats" title="${t('statsTitle')}">📈 ${t('statsTitle')}</button>
           <button class="iconbtn" id="btnMiniCal" title="${t('miniCalendar')}">🗓 ${t('miniCalendar')}</button>
+          <button class="iconbtn" id="btnQuiz" title="${t('flashcards')}">🃏 ${t('flashcards')}</button>
           <button class="iconbtn" id="btnActivityFlow" title="${t('actFlow')}">🌊 ${t('actFlow')}</button>
           <button class="iconbtn" id="btnTrash" title="${t('trash')}">🗑 ${t('trash')}</button>
         </div>
@@ -418,6 +419,7 @@ function bindEvents() {
   document.getElementById('btnWeekly')!.addEventListener('click', () => { void openWeeklyReport(); });
   document.getElementById('btnStats')!.addEventListener('click', () => openStatsModal());
   document.getElementById('btnMiniCal')!.addEventListener('click', () => openMiniCalendarModal());
+  document.getElementById('btnQuiz')!.addEventListener('click', () => openQuizModal());
   document.getElementById('btnActivityFlow')!.addEventListener('click', () => openActivityFlowModal());
   document.getElementById('btnBacklinks')!.addEventListener('click', () => toggleSidePanel());
   document.getElementById('closeSidePanel')!.addEventListener('click', () => toggleSidePanel());
@@ -1695,6 +1697,112 @@ function openSlides() {
     if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.stopPropagation(); if (idx > 0) { idx--; show(); } }
   }
   window.addEventListener('keydown', keyHandler, true);
+}
+
+// ---- 🃏 Flashkart + aralıklı tekrar (Leitner kutu sistemi, tamamen yerel) ----
+function collectFlashcards(): { key: string; noteId: string; noteTitle: string; q: string; a: string }[] {
+  const cards: { key: string; noteId: string; noteTitle: string; q: string; a: string }[] = [];
+  for (const n of getState().notes) {
+    if (n.deletedAt || n.locked) continue;
+    for (const line of n.content.split('\n')) {
+      const m = line.match(/^\s*(?:[-*+]\s+)?(.+?)\s*::\s*(.+)$/);
+      if (!m) continue;
+      const q = m[1].trim();
+      const a = m[2].trim();
+      if (!q || !a) continue;
+      if (a.includes('://')) continue;
+      if (/^[\w-]{1,28}$/.test(q)) continue; // block-prop (status::, deadline:: ...) kart değildir
+      cards.push({ key: n.id + '|' + q.slice(0, 120), noteId: n.id, noteTitle: n.title, q, a });
+    }
+  }
+  return cards;
+}
+
+function srsData(): Record<string, { box: number; due: number }> {
+  try { return JSON.parse(localStorage.getItem('catjam:srs') || '{}'); } catch { return {}; }
+}
+function srsSave(d: Record<string, { box: number; due: number }>) {
+  try { localStorage.setItem('catjam:srs', JSON.stringify(d)); } catch { /* kota */ }
+}
+function srsIntervalOf(box: number): number {
+  const I = [1, 3, 7, 16, 35, 70];
+  return I[Math.max(0, Math.min(box, I.length - 1))];
+}
+
+function openQuizModal() {
+  const all = collectFlashcards();
+  if (!all.length) {
+    showToast('🃏 ' + t('flashEmpty'));
+    return;
+  }
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop';
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.style.maxWidth = '520px';
+  backdrop.appendChild(modal);
+  document.body.appendChild(backdrop);
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+
+  const srs = srsData();
+  const now = Date.now();
+  const queue = all.filter((c) => { const r = srs[c.key]; return !r || r.due <= now; })
+    .map((c) => ({ c, sort: Math.random() }))
+    .sort((x, y) => x.sort - y.sort)
+    .map((x) => x.c)
+    .slice(0, 20);
+  let qi = 0;
+  let revealed = false;
+
+  if (!queue.length) { showToast('🎉 ' + t('flashGood') + ' — ' + t('emptyNoMatch')); return; }
+
+  function render() {
+    if (qi >= queue.length) {
+      modal.innerHTML = `<h3>🃏 ${t('flashcards')}</h3>
+        <div style="text-align:center;padding:26px 10px;font-size:15px;color:var(--text-h);">🎉 ${t('flashDone')} — ${queue.length} ✅</div>
+        <div style="text-align:right;margin-top:10px;"><button class="iconbtn" id="quizClose" style="width:auto;height:auto;padding:6px 14px;">${t('close')}</button></div>`;
+      (modal.querySelector('#quizClose') as HTMLButtonElement).addEventListener('click', () => backdrop.remove());
+      return;
+    }
+    const card = queue[qi];
+    revealed = false;
+    modal.innerHTML = `
+      <h3>🃏 ${t('flashcards')} <span class="dash-count">${qi + 1}/${queue.length}</span></h3>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">${escapeHtml(card.noteTitle)}</div>
+      <div id="quizQ" style="font-size:15px;color:var(--text-h);margin-bottom:14px;">${escapeHtml(card.q)}</div>
+      <div id="quizA" style="display:none;font-size:14px;line-height:1.6;color:var(--text);background:var(--bg-soft);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:14px;">${escapeHtml(card.a)}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="iconbtn" id="quizReveal" style="width:auto;height:auto;padding:6px 14px;">👁 ${t('flashShow')}</button>
+        <span id="quizGrades" style="display:none;gap:8px;">
+          <button class="iconbtn grade-btn" id="grAgain" style="width:auto;height:auto;padding:6px 12px;">${t('flashAgain')}</button>
+          <button class="iconbtn grade-btn" id="grHard" style="width:auto;height:auto;padding:6px 12px;">${t('flashHard')}</button>
+          <button class="iconbtn grade-btn" id="grGood" style="width:auto;height:auto;padding:6px 12px;">✅ ${t('flashGood')}</button>
+        </span>
+      </div>
+      <div style="text-align:right;margin-top:10px;"><button class="iconbtn" id="quizExit" style="width:auto;height:auto;padding:4px 10px;font-size:12px;">✕ ${t('close')}</button></div>`;
+    (modal.querySelector('#quizExit') as HTMLButtonElement).addEventListener('click', () => backdrop.remove());
+    (modal.querySelector('#quizReveal') as HTMLButtonElement).addEventListener('click', () => {
+      (modal.querySelector('#quizA') as HTMLDivElement).style.display = '';
+      (modal.querySelector('#quizGrades') as HTMLSpanElement).style.display = 'flex';
+      (modal.querySelector('#quizReveal') as HTMLButtonElement).style.display = 'none';
+      revealed = true;
+    });
+    const grade = (mode: 'again' | 'hard' | 'good') => {
+      if (!revealed) return;
+      const r = srs[card.key];
+      const prevBox = r?.box ?? 0;
+      if (mode === 'again') srs[card.key] = { box: 0, due: Date.now() + 10 * 60 * 1000 };
+      else if (mode === 'hard') srs[card.key] = { box: Math.min(prevBox, 3), due: Date.now() + srsIntervalOf(Math.max(1, prevBox)) * 86400000 };
+      else srs[card.key] = { box: Math.min(prevBox + 1, 5), due: Date.now() + srsIntervalOf(prevBox + 1) * 86400000 };
+      srsSave(srs);
+      qi++;
+      render();
+    };
+    (modal.querySelector('#grAgain') as HTMLButtonElement).addEventListener('click', () => grade('again'));
+    (modal.querySelector('#grHard') as HTMLButtonElement).addEventListener('click', () => grade('hard'));
+    (modal.querySelector('#grGood') as HTMLButtonElement).addEventListener('click', () => grade('good'));
+  }
+  render();
 }
 
 function openStatsModal() {

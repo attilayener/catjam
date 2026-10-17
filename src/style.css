@@ -501,13 +501,32 @@ body.focus-mode #catMascot { display: none; }
 }
 .empty-hint { padding: 12px; color: var(--text-muted); font-size: 13px; text-align: center; }
 
-.sidebar-foot { padding: 8px; border-top: 1px solid var(--border); display: flex; gap: 4px; flex-wrap: wrap; }
+.sidebar-foot { padding: 8px 6px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
 .sidebar-foot .iconbtn, #exitFocus {
   justify-content: flex-start; width: 100%; height: auto;
   padding: 8px 10px; border-radius: 8px; font-size: 13px;
   background: transparent; border-color: transparent;
 }
 .sidebar-foot .iconbtn:hover { background: var(--bg-soft); border-color: transparent; }
+
+/* foot grup başlıkları (aç/kapat) */
+.sb-gh {
+  display: flex; align-items: center; gap: 7px; width: 100%;
+  background: transparent; border: none; cursor: pointer; text-align: left;
+  color: var(--text-muted); font-size: 11px; font-weight: 600;
+  letter-spacing: .6px; text-transform: uppercase;
+  padding: 7px 10px 4px; border-radius: 8px;
+}
+.sb-gh:hover { background: var(--bg-soft); color: var(--text); }
+.sb-gb { display: flex; gap: 4px; flex-wrap: wrap; }
+.sb-group:not(.sb-open) .sb-gb { display: none; }
+.sb-caret { margin-left: auto; font-size: 9px; opacity: .7; transition: transform .15s ease; }
+.sb-group:not(.sb-open) .sb-caret { transform: rotate(-90deg); }
+/* ☰ ile yan barı gizle — yalnızca masaüstü */
+@media (min-width: 769px) {
+  body.sb-collapsed .sidebar { display: none; }
+  body.sb-collapsed .layout { grid-template-columns: 1fr; }
+}
 
 .main {
   display: flex; flex-direction: column; min-width: 0; min-height: 0;

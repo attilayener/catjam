@@ -182,17 +182,37 @@ function buildShell() {
     </div>
     <div class="note-list" id="noteList"></div>
     <div class="sidebar-foot">
-      <button class="iconbtn" id="btnSidebarNew" title="${t('newNoteBtn')}">＋ ${t('newNoteBtn')}</button>
-      <button class="iconbtn" id="btnSidebarDaily" title="${t('dailyNote')}">📅 ${t('dailyNote')}</button>
-      <button class="iconbtn" id="btnOpenVault" title="${t('openVault')}">📁 ${t('openVault')}</button>
-      <button class="iconbtn" id="btnExport" title="Export">⬇ Export</button>
-      <button class="iconbtn" id="btnImport" title="Import">⬆ Import</button>
-      <button class="iconbtn" id="btnImportRoam" title="Import Roam JSON">Roam</button>
-      <button class="iconbtn" id="btnTrash" title="${t('trash')}">🗑 ${t('trash')}</button>
-      <button class="iconbtn" id="btnShareHtml" title="${t('shareHtml')}">🌐 ${t('shareHtml')}</button>
-      <button class="iconbtn" id="btnPdf" title="${t('exportPdf')}">📄 PDF</button>
-      <button class="iconbtn" id="btnWeekly" title="${t('weeklyReport')}">📊 ${t('weeklyReport')}</button>
-      <button class="iconbtn" id="btnStats" title="${t('statsTitle')}">📈 ${t('statsTitle')}</button>
+      <div class="sb-group" data-grp="notes">
+        <button class="sb-gh" type="button"><span>📝</span>${t('grpNotes')}<span class="sb-caret">▾</span></button>
+        <div class="sb-gb">
+          <button class="iconbtn" id="btnSidebarNew" title="${t('newNoteBtn')}">＋ ${t('newNoteBtn')}</button>
+          <button class="iconbtn" id="btnSidebarDaily" title="${t('dailyNote')}">📅 ${t('dailyNote')}</button>
+        </div>
+      </div>
+      <div class="sb-group" data-grp="vault">
+        <button class="sb-gh" type="button"><span>🗂</span>${t('grpVault')}<span class="sb-caret">▾</span></button>
+        <div class="sb-gb">
+          <button class="iconbtn" id="btnOpenVault" title="${t('openVault')}">📁 ${t('openVault')}</button>
+        </div>
+      </div>
+      <div class="sb-group" data-grp="io">
+        <button class="sb-gh" type="button"><span>⇅</span>${t('grpIO')}<span class="sb-caret">▾</span></button>
+        <div class="sb-gb">
+          <button class="iconbtn" id="btnExport" title="Export">⬇ Export</button>
+          <button class="iconbtn" id="btnImport" title="Import">⬆ Import</button>
+          <button class="iconbtn" id="btnImportRoam" title="Import Roam JSON">Roam</button>
+        </div>
+      </div>
+      <div class="sb-group" data-grp="tools">
+        <button class="sb-gh" type="button"><span>🧰</span>${t('grpTools')}<span class="sb-caret">▾</span></button>
+        <div class="sb-gb">
+          <button class="iconbtn" id="btnShareHtml" title="${t('shareHtml')}">🌐 ${t('shareHtml')}</button>
+          <button class="iconbtn" id="btnPdf" title="${t('exportPdf')}">📄 PDF</button>
+          <button class="iconbtn" id="btnWeekly" title="${t('weeklyReport')}">📊 ${t('weeklyReport')}</button>
+          <button class="iconbtn" id="btnStats" title="${t('statsTitle')}">📈 ${t('statsTitle')}</button>
+          <button class="iconbtn" id="btnTrash" title="${t('trash')}">🗑 ${t('trash')}</button>
+        </div>
+      </div>
     </div>
   `;
 
@@ -303,8 +323,21 @@ function bindEvents() {
       updateEditorStatus();
     });
   }
-  document.getElementById('hamburger')!.addEventListener('click', () => toggleSidebar(true));
+  document.getElementById('hamburger')!.addEventListener('click', () => toggleHamburger());
   document.getElementById('sidebarBackdrop')!.addEventListener('click', () => toggleSidebar(false));
+  // kayıtlı yan bar durumu (masaüstü gizli mi?) + foot grubu aç/kapat kalıcılığı
+  try { if (localStorage.getItem('catjam:sbOpen') === '0') document.body.classList.add('sb-collapsed'); } catch { /* yoksay */ }
+  let sbGrp: Record<string, number> = {};
+  try { sbGrp = JSON.parse(localStorage.getItem('catjam:sbgrp') || '{}') as Record<string, number>; } catch { sbGrp = {}; }
+  document.querySelectorAll<HTMLElement>('.sb-group').forEach((g) => {
+    const key = g.dataset.grp || '';
+    g.classList.toggle('sb-open', sbGrp[key] !== 0);
+    (g.querySelector('.sb-gh') as HTMLElement | null)?.addEventListener('click', () => {
+      const nowOpen = g.classList.toggle('sb-open');
+      sbGrp[key] = nowOpen ? 1 : 0;
+      try { localStorage.setItem('catjam:sbgrp', JSON.stringify(sbGrp)); } catch { /* yoksay */ }
+    });
+  });
   document.getElementById('btnNew')!.addEventListener('click', () => newNoteAndRender());
   document.getElementById('btnSidebarNew')!.addEventListener('click', () => newNoteAndRender());
   document.getElementById('btnSidebarDaily')!.addEventListener('click', () => dailyNote());
@@ -728,6 +761,16 @@ async function prepareWhisperModel() {
 function toggleSidebar(open: boolean) {
   document.getElementById('sidebar')!.classList.toggle('open', open);
   document.getElementById('sidebarBackdrop')!.classList.toggle('open', open);
+}
+
+function toggleHamburger() {
+  // Mobilde: kayan panelin açık/kapalı durumunu tersine çevir. Masaüstü: yan barı tamamen gizle/göster (kalıcı).
+  if (window.matchMedia('(max-width: 768px)').matches) {
+    toggleSidebar(!document.getElementById('sidebar')!.classList.contains('open'));
+  } else {
+    const collapsed = document.body.classList.toggle('sb-collapsed');
+    try { localStorage.setItem('catjam:sbOpen', collapsed ? '0' : '1'); } catch { /* yoksay */ }
+  }
 }
 function toggleSidePanel() {
   const panel = document.getElementById('sidePanel')!;
@@ -3737,6 +3780,145 @@ function fuzzyScore(text: string, query: string): number {
   return i === q.length ? score : -1;
 }
 
+// ---- 🎓 İlk açılış örnek notları (bir kere) ----
+const SAMPLE_WELCOME_TR = `# 🎓 Hoş geldin! Bu not her şeyi gösterir
+
+Cat Jam **tamamen yerel** çalışır: notların cihazında, internet gerekmez. Soldaki **☰** yan barı açar/kapatır.
+
+## ✍️ Yazma demosu
+- **kalın**, *italik*, ~~üstü çizili~~, \`satır içi kod\`
+- [x] İşaretli görev — 🏠 Ana panel'de (Ctrl+D) sayılır
+- [ ] Açık görev — Ana panelde üzerine tıkla, burada işaretlenir
+- 📅 **Günlük not** — üstteki 📅 ile her güne ayrı sayfa açılır
+
+> [!tip] İpucu
+> Önizleme modunda bağlantıların üstüne **gel** — küçük bir kart açılır 👀
+
+## 🔗 Bağlantılar
+- [[💡 Fikir Defteri]] sayfasına bağlı — aç, sonra üstteki ↔ ile geri bağlantıları gör
+- #hoşgeldin #demo etiketleri — üstten geri # ile etiketlere bak
+
+## 🧭 Komut haritası
+\`\`\`mermaid
+graph LR
+A[Ctrl+P] --> B{Ne lazım?}
+B -->|Komut| C[Çalıştır]
+B -->|Not| D[Aç]
+\`\`\`
+
+## ⚡ Kanban / durum
+Aşağıdaki satır bu notu ▦ panosuna koyar:
+
+status:: TODO
+
+## 🧪 Kod bloğu
+\`\`\`js
+const cat = jam.pet(); // 🐾 Ctrl+P: komut paleti
+\`\`\`
+
+## 📐 Matematik
+$$e^{i\\pi} + 1 = 0$$
+
+## 📋 Tablo
+| Özellik | Durum |
+| --- | --- |
+| Çevrimdışı çalışır | ✅ |
+| Uçtan uca şifreli notlar | 🔒 |
+| Sesli yazım (yerel AI) | 🎙 |
+| Graf görünümü | ⬢ |
+
+---
+🐾 **Kedi**: basılı tut → mırlar · çift tık → menü · boşta → lazer avı!
+İstersen bu notu silebilirsin 🗑 — yeni başlayanlar için bir kere oluşturuldu.`;
+
+const SAMPLE_IDEA_TR = `# 💡 Fikir Defteri
+
+- [ ] Akşam yürüyüşünden sonra 10 dakika yaz
+- [ ] Kediye 3 aday isim düşün: Pofuduk, Mırnav, Karaman?
+- Ekim hedefi: her gün en az bir paragraf
+- Bahçe düzeni eskizleri
+- Cumartesi: yün çorap deseni
+
+status:: TODO
+
+Bu sayfa 🎓 hoş geldin notuna gömülü.  ▦ (Kanban) ile durumunu sürükle!`;
+
+const SAMPLE_WELCOME_EN = `# 🎓 Welcome! This note shows everything
+
+Cat Jam runs **fully local**: your notes live on your device, no internet needed. The **☰** on the left collapses/expands the sidebar.
+
+## ✍️ Writing demo
+- **bold**, *italic*, ~~strikethrough~~, \`inline code\`
+- [x] Checked task — counted on the 🏠 Dashboard (Ctrl+D)
+- [ ] Open task — click it on the Dashboard and it gets checked here
+- 📅 **Daily note** — press 📅 up top for a fresh page each day
+
+> [!tip] Tip
+> In preview mode, **hover** your links — a small card pops up 👀
+
+## 🔗 Links
+- Linked to [[💡 Idea Pad]] — open it, then hit ↔ above to see backlinks
+- #welcome #demo tags — use the # button to browse tags
+
+## 🧭 Command map
+\`\`\`mermaid
+graph LR
+A[Ctrl+P] --> B{What do you need?}
+B -->|Command| C[Run it]
+B -->|Note| D[Open it]
+\`\`\`
+
+## ⚡ Kanban / status
+The line below puts this note on the ▦ board:
+
+status:: TODO
+
+## 🧪 Code block
+\`\`\`js
+const cat = jam.pet(); // 🐾 Ctrl+P: command palette
+\`\`\`
+
+## 📐 Math
+$$e^{i\\pi} + 1 = 0$$
+
+## 📋 Table
+| Feature | Status |
+| --- | --- |
+| Works offline | ✅ |
+| End-to-end encrypted notes | 🔒 |
+| Voice typing (local AI) | 🎙 |
+| Graph view | ⬢ |
+
+---
+🐾 **The cat**: hold → purrs · double-click → menu · idle → laser chase!
+You can delete this note anytime 🗑 — it was created once for newcomers.`;
+
+const SAMPLE_IDEA_EN = `# 💡 Idea Pad
+
+- [ ] Write 10 minutes after the evening walk
+- [ ] Think of 3 name ideas for the cat: Mochi, Why, Caramel?
+- October goal: at least one paragraph every day
+- Garden layout sketches
+- Saturday: wool sock pattern
+
+status:: TODO
+
+This page is embedded in the 🎓 welcome note. Drag my status on the ▦ (Kanban) board!`;
+
+async function ensureSampleNotes() {
+  try {
+    if (localStorage.getItem('catjam:sampled') === '1') return;
+    localStorage.setItem('catjam:sampled', '1');
+  } catch { return; }
+  const tr = getState().settings.language === 'tr';
+  const idea = await createNote(tr ? '💡 Fikir Defteri' : '💡 Idea Pad');
+  await updateNote(idea.id, { content: tr ? SAMPLE_IDEA_TR : SAMPLE_IDEA_EN });
+  const welcome = await createNote(tr ? '🎓 Hoş geldin — ne yapabilirsin?' : '🎓 Welcome — what this app can do');
+  await updateNote(welcome.id, { content: tr ? SAMPLE_WELCOME_TR : SAMPLE_WELCOME_EN });
+  setActive(welcome.id);
+  renderAll();
+}
+
 async function main() {
   // 🐱 kedi → not açma ve pomodoro bitiş köprüsü
   window.addEventListener('catjam:opennote', (e) => {
@@ -3749,6 +3931,7 @@ async function main() {
   window.addEventListener('catjam:pomo-done', () => showToast('🍅 ' + t('pomoDone')));
   buildShell();
   await initStore();
+  await ensureSampleNotes();
   try {
     const favRow = await db.settings.get('favorites');
     if (favRow && Array.isArray(favRow.value)) favorites = favRow.value.filter((id: string) => getState().notes.some((n) => n.id === id));

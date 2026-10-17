@@ -82,6 +82,11 @@ const dict: Record<Lang, Record<string, string>> = {
     'voiceDeleteConfirm': 'Delete this model from device storage? It will be re-downloaded on next use.',
     'voiceDeleted': 'Model deleted from device. It will be re-downloaded on next use.',
     'voiceNotCached': 'Not downloaded yet',
+    'readingTime': '⏱ {n} min read',
+    'writeProfile': 'Writing profile',
+    'writeProfileSans': 'Clean (Sans)',
+    'writeProfileSerif': 'Book (Serif)',
+    'writeProfileMono': 'Focus (Mono)',
   },
   tr: {
     'brand': 'Cat Jam',
@@ -164,6 +169,11 @@ const dict: Record<Lang, Record<string, string>> = {
     'voiceDeleteConfirm': 'Model cihazdan silinsin mi? (Bir daha kullanmak istersen yeniden indirilir)',
     'voiceDeleted': 'Model cihazdan silindi. Tekrar kullanmak isteyince yeniden indirilir.',
     'voiceNotCached': 'Henüz indirilmedi',
+    'readingTime': '⏱ {n} dk okuma',
+    'writeProfile': 'Yazma profili',
+    'writeProfileSans': 'Sade (Sans)',
+    'writeProfileSerif': 'Kitap (Serif)',
+    'writeProfileMono': 'Odak (Mono)',
   },
 };
 

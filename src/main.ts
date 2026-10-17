@@ -17,6 +17,16 @@ let recentNoteIds: string[] = [];
 let favorites: string[] = [];
 let voiceEngine: 'webspeech' | 'whisper' = 'webspeech';
 let whisperModelKey: 'tiny' | 'base' | 'small' = 'base';
+let editorFontProfile: 'sans' | 'serif' | 'mono' = 'mono';
+
+function applyEditorFont(profile: 'sans' | 'serif' | 'mono') {
+  const fonts: Record<string, string> = {
+    sans: `system-ui, 'Segoe UI', Roboto, sans-serif`,
+    serif: `Georgia, 'Iowan Old Style', 'Times New Roman', serif`,
+    mono: `ui-monospace, Consolas, 'Cascadia Mono', monospace`,
+  };
+  document.documentElement.style.setProperty('--editor-font', fonts[profile] ?? fonts.mono);
+}
 try { recentNoteIds = JSON.parse(localStorage.getItem('catjam:recent') || '[]'); } catch { recentNoteIds = []; }
 function markRecent(id: string) {
   recentNoteIds = [id, ...recentNoteIds.filter((x) => x !== id)].slice(0, 12);
@@ -89,6 +99,7 @@ function buildShell() {
   main.innerHTML = `
     <div class="editor-header" id="editorHeader">
       <input class="title-input" id="titleInput" placeholder="${t('untitled')}" />
+      <span class="reading-time" id="readingTime"></span>
       <div class="mode-toggle" id="modeToggle">
         <button data-mode="edit">${t('edit')}</button>
         <button data-mode="preview">${t('preview')}</button>
@@ -588,9 +599,18 @@ function openWikiTarget(target: string) {
   }
 }
 
+function updateReadingTime(content: string) {
+  const rt = document.getElementById('readingTime');
+  if (!rt) return;
+  const words = content.split(/\s+/).filter(Boolean).length;
+  const mins = Math.max(1, Math.round(words / 200));
+  rt.textContent = words ? t('readingTime', { n: String(mins) }) : '';
+}
+
 function updatePreview(content: string) {
   const pc = document.getElementById('previewContent')!;
   pc.innerHTML = renderMarkdown(resolveRoamEmbeds(content));
+  updateReadingTime(content);
   // Outliner collapse toggles
   requestAnimationFrame(() => {
     pc.querySelectorAll('li').forEach((li) => {
@@ -1117,6 +1137,14 @@ function openSettings() {
       <span id="fontSizeLabel">${getState().settings.fontSize}px</span>
     </div>
     <div style="margin-bottom:12px;">
+      <div style="font-size:13px;color:var(--text-muted);margin-bottom:6px;">${t('writeProfile')}</div>
+      <select id="editorFontSelect" class="search-input" style="width:100%;">
+        <option value="sans">${t('writeProfileSans')}</option>
+        <option value="serif">${t('writeProfileSerif')}</option>
+        <option value="mono">${t('writeProfileMono')}</option>
+      </select>
+    </div>
+    <div style="margin-bottom:12px;">
       <div style="font-size:13px;color:var(--text-muted);margin-bottom:6px;">${t('voiceEngine')}</div>
       <select id="voiceEngineSelect" class="search-input" style="width:100%;">
         <option value="webspeech">${t('voiceWebSpeech')}</option>
@@ -1178,6 +1206,14 @@ function openSettings() {
     // store
     getState().settings.fontSize = v;
     saveSetting('fontSize', v);
+  });
+  // Yazma profili
+  const fontSelect = modal.querySelector('#editorFontSelect') as HTMLSelectElement;
+  fontSelect.value = editorFontProfile;
+  fontSelect.addEventListener('change', async () => {
+    editorFontProfile = fontSelect.value as 'sans' | 'serif' | 'mono';
+    applyEditorFont(editorFontProfile);
+    await saveSetting('editorFontProfile', editorFontProfile);
   });
   document.documentElement.style.setProperty('--font-size', getState().settings.fontSize + 'px');
   modal.querySelector('#closeSettings')!.addEventListener('click', () => backdrop.remove());
@@ -2019,6 +2055,11 @@ async function main() {
     const wmRow = await db.settings.get('whisperModel');
     if (wmRow && WHISPER_MODEL_META[wmRow.value]) whisperModelKey = wmRow.value;
   } catch { /* default */ }
+  try {
+    const efRow = await db.settings.get('editorFontProfile');
+    if (efRow && ['sans', 'serif', 'mono'].includes(efRow.value)) editorFontProfile = efRow.value;
+  } catch { /* default */ }
+  applyEditorFont(editorFontProfile);
   // apply settings font size
   document.documentElement.style.setProperty('--font-size', getState().settings.fontSize + 'px');
   if (!getState().notes.length) {

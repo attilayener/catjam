@@ -353,9 +353,29 @@ function bindEvents() {
   const editorPane = document.getElementById('editorPane')!;
   editorPane.addEventListener('dragover', (e) => { e.preventDefault(); });
 
+  // split modda kaydırma senkronu (oransal konum eşitleme, geri-döngü koruması ile)
+  let syncGuard = false;
+  const bail = () => { syncGuard = true; requestAnimationFrame(() => { syncGuard = false; }); };
+  editorTextarea.addEventListener('scroll', () => {
+    if (syncGuard || getState().settings.editorMode !== 'split') return;
+    const pp = document.getElementById('previewPane')!;
+    const from = editorTextarea.scrollHeight - editorTextarea.clientHeight;
+    const to = pp.scrollHeight - pp.clientHeight;
+    if (from <= 0 || to <= 0) return;
+    pp.scrollTop = (editorTextarea.scrollTop / from) * to;
+    bail();
+  });
   const previewPane = document.getElementById('previewPane');
   if (previewPane) {
     previewPane.addEventListener('dragover', (e) => { e.preventDefault(); });
+    previewPane.addEventListener('scroll', () => {
+      if (syncGuard || getState().settings.editorMode !== 'split') return;
+      const from = previewPane.scrollHeight - previewPane.clientHeight;
+      const to = editorTextarea.scrollHeight - editorTextarea.clientHeight;
+      if (from <= 0 || to <= 0) return;
+      editorTextarea.scrollTop = (previewPane.scrollTop / from) * to;
+      bail();
+    });
   }
 
   // global drag-and-drop overlay handling

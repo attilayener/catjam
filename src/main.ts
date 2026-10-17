@@ -225,31 +225,42 @@ function bindEvents() {
     voiceBtn.addEventListener('click', () => alert(t('voiceUnsupported')));
   } else {
     voiceBtn.addEventListener('click', () => {
-      if ((voiceBtn as any).__listening && (voiceBtn as any).__rec) {
-        (voiceBtn as any).__rec.stop();
+      const vb = voiceBtn as any;
+      if (vb.__listening && vb.__rec) {
+        vb.__want = false;
+        vb.__rec.stop();
         return;
       }
       const rec = new SR();
-      (voiceBtn as any).__rec = rec;
+      vb.__rec = rec;
+      vb.__want = true;
       rec.continuous = true;
       rec.interimResults = true;
       rec.lang = getLanguage() === 'tr' ? 'tr-TR' : 'en-US';
       rec.onstart = () => {
-        (voiceBtn as any).__listening = true;
+        vb.__listening = true;
         voiceBtn.classList.add('recording');
         voiceBtn.textContent = '⏹';
         voiceBtn.title = t('voiceListening');
       };
       rec.onend = () => {
-        (voiceBtn as any).__listening = false;
-        voiceBtn.classList.remove('recording');
-        voiceBtn.textContent = '🎙';
-        voiceBtn.title = t('voiceTyping');
-        const ta = document.getElementById('editorTextarea') as HTMLTextAreaElement | null;
-        ta?.focus();
+        vb.__listening = false;
+        if (vb.__want) {
+          // Chrome closes the session after ~1 min; auto restart for truly continuous dictation
+          setTimeout(() => { if (vb.__want) { try { rec.start(); } catch { /* ignore */ } } }, 250);
+        } else {
+          voiceBtn.classList.remove('recording');
+          voiceBtn.textContent = '🎙';
+          voiceBtn.title = t('voiceTyping');
+          const ta = document.getElementById('editorTextarea') as HTMLTextAreaElement | null;
+          ta?.focus();
+        }
       };
       rec.onerror = (e: any) => {
-        if (e && e.error === 'not-allowed') alert(t('voiceDeny'));
+        if (e && e.error === 'not-allowed') {
+          vb.__want = false;
+          alert(t('voiceDeny'));
+        }
       };
       rec.onresult = (e: any) => {
         let finalText = '';

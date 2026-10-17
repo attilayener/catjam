@@ -81,6 +81,16 @@ button:active { transform: translateY(0.5px); }
   white-space: nowrap;
 }
 #appToast .toast-action:hover { background: var(--accent); color: #fff; }
+
+/* --- Kilitli not kartı --- */
+.lock-card {
+  grid-column: 1 / -1;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px; padding: 40px 20px; text-align: center;
+  background: var(--bg, transparent);
+}
+.lock-card .lock-emoji { font-size: 40px; opacity: .8; }
+.lock-card .lock-title { color: var(--text-h); font-weight: 600; font-size: 16px; }
 .iconbtn svg { width: 18px; height: 18px; }
 
 /* Layout */

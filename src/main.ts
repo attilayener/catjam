@@ -7,6 +7,77 @@ import { t, availableLanguages, getLanguage } from './i18n';
 import { saveImage, loadImages } from './images';
 import { getVaultHandle, ensureVaultPermission, saveImageToVault, uniqueVaultPath, createVaultNote, loadVaultImages } from './vault';
 import { initWhisperLocal, transcribeBlob, whisperReadyFor, whisperCached, whisperSupported, deleteWhisperModel, WHISPER_MODELS as WHISPER_MODEL_META } from './voice';
+import { encryptText, decryptText } from './secure';
+
+const LOCKED_PLACEHOLDER = '[🔒 Encrypted — Cat Jam]';
+
+// ---------- Not kilidi (E2EE) ----------
+const unlockedSet = new Set<string>(); // bu oturumda kilidi açılmış not id'leri (plaintext yalnız bellekte)
+
+function noteLocked(n: any): boolean {
+  return !!n?.locked && !!n?.lockData;
+}
+
+async function lockCurrentNote() {
+  const n = getActiveNote();
+  if (!n || noteLocked(n)) return;
+  const ta = document.getElementById('editorTextarea') as HTMLTextAreaElement;
+  const pass = prompt(t('setPasswordPrompt'));
+  if (!pass) return;
+  const again = prompt(t('passwordAgain'));
+  if (again === null) return;
+  if (again !== pass) { alert(t('wrongPass')); return; }
+  const hint = prompt(t('lockNote') + ' — hint (opsiyonel)') || undefined;
+  const plain = ta?.value ?? n.content;
+  if (!plain.trim()) { alert('Boş not şifrelenmez.'); return; }
+  const lockData = await encryptText(pass, plain);
+  if (hint) (lockData as { hint?: string }).hint = hint;
+  clearTimeout(saveTimer); // bekleyen otosave plaintext yazmasın
+  unlockedSet.delete(n.id);
+  await updateNote(n.id, { content: LOCKED_PLACEHOLDER, locked: true, lockData });
+  renderAll();
+  showToast('🔒 ' + t('lockedTitle'));
+}
+
+async function toggleLockButton() {
+  const n = getActiveNote();
+  if (!n) return;
+  if (noteLocked(n)) {
+    if (unlockedSet.has(n.id)) {
+      unlockedSet.delete(n.id);
+      (n as any).content = LOCKED_PLACEHOLDER; // bellekteki plaintext'i gizle
+      renderAll();
+    } else {
+      // kilitliyken tıklandı → kartın parola alanına odak
+      (document.getElementById('lockPass') as HTMLInputElement | null)?.focus();
+    }
+    return;
+  }
+  await lockCurrentNote();
+}
+
+async function resolveSimpleUnlock() {
+  const n = getActiveNote();
+  if (!n || !noteLocked(n)) return;
+  const input = document.getElementById('lockPass') as HTMLInputElement | null;
+  const err = document.getElementById('lockErr');
+  const pass = input?.value ?? '';
+  if (!pass) return;
+  try {
+    const plain = await decryptText(pass, n.lockData!);
+    if (err) err.textContent = '';
+    unlockedSet.add(n.id);
+    (n as any).content = plain; // yalnız bellek: DB hâlâ şifreli placeholder
+    renderAll();
+    showToast('🔓 ' + t('unlockBtn') + ' — ' + t('readonlyLock'));
+  } catch {
+    if (err) err.textContent = t('wrongPass');
+  }
+}
+
+function isEditorLocked(n: any): boolean {
+  return noteLocked(n) && !unlockedSet.has(n.id);
+}
 
 let saveTimer: any = null;
 let propsTimer: any = null;
@@ -118,6 +189,7 @@ function buildShell() {
         <button data-mode="preview">${t('preview')}</button>
         <button data-mode="split">${t('split')}</button>
       </div>
+      <button class="iconbtn" id="btnLock" title="${t('lockNote')}">🔒</button>
       <button class="iconbtn" id="btnVoice" title="${t('voiceTyping')}">🎙</button>
       <button class="iconbtn" id="btnStar" title="${t('favoriteToggle')}">☆</button>
       <button class="iconbtn" id="btnDelete" title="${t('deleteNote')}">🗑</button>
@@ -132,6 +204,14 @@ function buildShell() {
       </div>
       <div class="preview-pane" id="previewPane">
         <div class="markdown" id="previewContent"></div>
+      </div>
+      <div class="lock-card" id="lockCard" style="display:none;">
+        <div class="lock-emoji">🔒</div>
+        <div class="lock-title">${t('lockedTitle')}</div>
+        <div id="lockHint" style="font-size:12px;color:var(--text-muted);margin-bottom:10px;"></div>
+        <input type="password" class="search-input" id="lockPass" style="text-align:center;max-width:260px;" placeholder="••••••" />
+        <div id="lockErr" style="color:#ef4444;font-size:12px;min-height:16px;margin-top:4px;"></div>
+        <button class="iconbtn" id="lockUnlock" style="width:auto;padding:8px 18px;font-size:13px;background:var(--accent-soft);border-color:var(--accent);color:var(--accent);">🔓 ${t('unlockBtn')}</button>
       </div>
     </div>
     <div class="graph-wrap" id="graphWrap" style="display:none;">
@@ -251,6 +331,11 @@ function bindEvents() {
   document.getElementById('btnFocus')!.addEventListener('click', () => document.body.classList.toggle('focus-mode'));
   document.getElementById('exitFocus')!.addEventListener('click', () => document.body.classList.remove('focus-mode'));
   document.getElementById('btnSettings')!.addEventListener('click', () => openSettings());
+  document.getElementById('btnLock')!.addEventListener('click', () => { void toggleLockButton(); });
+  const lockUnlockBtn = document.getElementById('lockUnlock')!;
+  lockUnlockBtn.addEventListener('click', () => { void resolveSimpleUnlock(); });
+  const lockPass = document.getElementById('lockPass') as HTMLInputElement | null;
+  lockPass?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { void resolveSimpleUnlock(); } });
   // Sesli yazım: seçili motora göre çalış (bulut Web Speech / yerel Whisper)
   const voiceBtn = document.getElementById('btnVoice') as HTMLButtonElement;
   voiceBtn.addEventListener('click', () => onMicClick(voiceBtn));
@@ -284,18 +369,21 @@ function bindEvents() {
   const titleInput = document.getElementById('titleInput') as HTMLInputElement;
   titleInput.addEventListener('input', () => {
     const n = getActiveNote(); if (!n) return;
+    if (titleInput.readOnly) return; // kilitli not: başlık değişmez
     // debounce
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => updateNote(n.id, { title: titleInput.value }), 400);
   });
   titleInput.addEventListener('blur', () => {
     const n = getActiveNote(); if (!n) return;
+    if (titleInput.readOnly) return;
     updateNote(n.id, { title: titleInput.value });
   });
 
   const editorTextarea = document.getElementById('editorTextarea') as HTMLTextAreaElement;
   editorTextarea.addEventListener('input', () => {
     const n = getActiveNote(); if (!n) return;
+    if (editorTextarea.readOnly) return; // kilitli not: DB'ye plaintext yazılmaz
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => updateNote(n.id, { content: editorTextarea.value }), 500);
     updatePreview(editorTextarea.value);
@@ -922,12 +1010,36 @@ function renderEditor() {
   if (n && n.id !== lastViewedId) { lastViewedId = n.id; markRecent(n.id); }
   const titleInput = document.getElementById('titleInput') as HTMLInputElement;
   const textarea = document.getElementById('editorTextarea') as HTMLTextAreaElement;
+  const lockCard = document.getElementById('lockCard')!;
+  const editorPane = document.getElementById('editorPane')!;
+  const previewPaneEl = document.getElementById('previewPane')!;
+  const lockBtn = document.getElementById('btnLock') as HTMLButtonElement | null;
   if (!n) {
     titleInput.value = '';
     textarea.value = '';
     document.getElementById('previewContent')!.innerHTML = '';
+    lockCard.style.display = 'none'; editorPane.style.display = ''; previewPaneEl.style.display = '';
     return;
   }
+  const unlocked = noteLocked(n) && unlockedSet.has(n.id);
+  const lockedNow = isEditorLocked(n);
+  if (lockBtn) {
+    lockBtn.textContent = noteLocked(n) ? (unlocked ? '🔓' : '🔒') : '🔒';
+    lockBtn.classList.toggle('active', noteLocked(n));
+    lockBtn.title = noteLocked(n) ? (unlocked ? t('relock') : t('unlockBtn')) : t('lockNote');
+  }
+  if (lockedNow) {
+    const hint = document.getElementById('lockHint')!;
+    hint.textContent = n.lockData?.hint ? '💡 ' + n.lockData.hint : t('lockedPlaceholder');
+    titleInput.value = n.title;
+    titleInput.readOnly = true;
+    textarea.value = '';
+    textarea.readOnly = true;
+    return;
+  }
+  lockCard.style.display = 'none';
+  titleInput.readOnly = !!noteLocked(n); // kilit açık ama salt okunur
+  textarea.readOnly = !!noteLocked(n);
   titleInput.value = n.title;
   textarea.value = n.content;
   const star = document.getElementById('btnStar') as HTMLButtonElement | null;

@@ -283,6 +283,12 @@ let graphNodes: any[] = [];
 let graphEdges: any[] = [];
 
 function bindEvents() {
+  // 📱 format çubuğu: document seviyesi tek seferlik
+  if (!(window as any).__fmtBarBound) {
+    (window as any).__fmtBarBound = true;
+    buildFmtBar();
+    document.addEventListener('selectionchange', updateFmtBarVisibility);
+  }
   document.getElementById('hamburger')!.addEventListener('click', () => toggleSidebar(true));
   document.getElementById('sidebarBackdrop')!.addEventListener('click', () => toggleSidebar(false));
   document.getElementById('btnNew')!.addEventListener('click', () => newNoteAndRender());
@@ -451,7 +457,12 @@ function bindEvents() {
       ta.dispatchEvent(new Event('input'));
     }
   });
-  editorTextarea.addEventListener('blur', () => { setTimeout(hideSuggestions, 200); });
+  editorTextarea.addEventListener('blur', () => { setTimeout(hideSuggestions, 200); setTimeout(updateFmtBarVisibility, 220); });
+  editorTextarea.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && document.getElementById('fmtBar')?.classList.contains('show')) {
+      document.getElementById('fmtBar')!.classList.remove('show');
+    }
+  });
   editorTextarea.addEventListener('paste', async (e) => {
     const cd = (e as ClipboardEvent).clipboardData;
     if (!cd) return;
@@ -2078,6 +2089,108 @@ subscribe(() => {
   // 🐱 kediyi kuyruğuyla selamla
   catAutoWiggle();
 });
+
+// ---- 📱 Mobil format çubuğu (seçim yapınca yüzen şerit) ----
+function buildFmtBar() {
+  if (document.getElementById('fmtBar')) return;
+  const bar = document.createElement('div');
+  bar.id = 'fmtBar';
+  const mk = (label: string, title: string, action: () => void) => {
+    const b = document.createElement('button');
+    b.className = 'fmt-btn';
+    b.innerHTML = label;
+    b.title = title;
+    b.addEventListener('pointerdown', (e) => {
+      e.preventDefault(); // seçim kaybolmasın
+      const ta = document.getElementById('editorTextarea') as HTMLTextAreaElement | null;
+      if (!ta) return;
+      action();
+      updateFmtBarVisibility();
+    });
+    bar.appendChild(b);
+  };
+  mk('<b>B</b>', 'Kalın', () => wrapSel('**', '**'));
+  mk('<i>I</i>', 'İtalik', () => wrapSel('*', '*'));
+  mk('<s>S</s>', 'Üstü çizili', () => wrapSel('~~', '~~'));
+  mk('<code>&lt;/&gt;</code>', 'Kod', () => wrapSel('`', '`'));
+  mk('<b>H</b>', 'Başlık', () => cycleHeading());
+  mk('🔗', 'Bağlantı', () => wrapSel('[[', ']]'));
+  mk('≡', 'Liste', () => linePrefixSel('- '));
+  mk('☑', 'Görev', () => linePrefixSel('- [ ] '));
+  mk('❝', 'Alıntı', () => linePrefixSel('> '));
+  document.body.appendChild(bar);
+}
+
+function wrapSel(pre: string, post: string) {
+  const ta = document.getElementById('editorTextarea') as HTMLTextAreaElement | null;
+  if (!ta) return;
+  const s = ta.selectionStart, e = ta.selectionEnd;
+  const sel = ta.value.slice(s, e);
+  // zaten sarılıysa aç
+  if (ta.value.slice(Math.max(0, s - pre.length), s) === pre && ta.value.slice(e, e + post.length) === post) {
+    ta.value = ta.value.slice(0, s - pre.length) + sel + ta.value.slice(e + post.length);
+    ta.selectionStart = s - pre.length;
+    ta.selectionEnd = e - pre.length;
+  } else {
+    ta.value = ta.value.slice(0, s) + pre + sel + post + ta.value.slice(e);
+    ta.selectionStart = s + pre.length;
+    ta.selectionEnd = e + pre.length;
+  }
+  ta.focus();
+  ta.dispatchEvent(new Event('input'));
+}
+
+function linePrefixSel(prefix: string) {
+  const ta = document.getElementById('editorTextarea') as HTMLTextAreaElement | null;
+  if (!ta) return;
+  const s = ta.selectionStart, e = Math.max(ta.selectionEnd, s);
+  const lineStart = ta.value.lastIndexOf('\n', Math.max(0, s - 1)) + 1;
+  const lineEndIdx = ta.value.indexOf('\n', Math.max(e - 1, s));
+  const lineEnd = lineEndIdx === -1 ? ta.value.length : lineEndIdx;
+  const block = ta.value.slice(lineStart, lineEnd);
+  const newBlock = block.split('\n').map((l) => {
+    const t2 = l.trimStart();
+    if (t2.startsWith(prefix)) {
+      const idx = l.indexOf(prefix);
+      return idx >= 0 ? l.slice(0, idx) + l.slice(idx + prefix.length) : l;
+    }
+    return l.trim() ? prefix + l : prefix;
+  }).join('\n');
+  ta.value = ta.value.slice(0, lineStart) + newBlock + ta.value.slice(lineEnd);
+  ta.selectionStart = lineStart;
+  ta.selectionEnd = lineStart + newBlock.length;
+  ta.focus();
+  ta.dispatchEvent(new Event('input'));
+}
+
+function cycleHeading() {
+  const ta = document.getElementById('editorTextarea') as HTMLTextAreaElement | null;
+  if (!ta) return;
+  const s = ta.selectionStart;
+  const lineStart = ta.value.lastIndexOf('\n', Math.max(0, s - 1)) + 1;
+  const lineEndIdx = ta.value.indexOf('\n', s);
+  const lineEnd = lineEndIdx === -1 ? ta.value.length : lineEndIdx;
+  const line = ta.value.slice(lineStart, lineEnd);
+  const mm = line.match(/^(#{1,3})\s/);
+  const cur = mm ? mm[1].length : 0; // 0=düz, 1..3=H1..H3
+  const next = ['', '# ', '## ', '### '][(cur + 1) % 4];
+  const stripped = line.replace(/^#{0,3}\s*/, '');
+  const newLine = next + stripped;
+  ta.value = ta.value.slice(0, lineStart) + newLine + ta.value.slice(lineEnd);
+  ta.selectionStart = lineStart;
+  ta.selectionEnd = lineStart + newLine.length;
+  ta.focus();
+  ta.dispatchEvent(new Event('input'));
+}
+
+function updateFmtBarVisibility() {
+  const bar = document.getElementById('fmtBar');
+  if (!bar) return;
+  const ta = document.getElementById('editorTextarea') as HTMLTextAreaElement | null;
+  const small = window.matchMedia('(max-width: 950px)').matches;
+  const active = !!ta && document.activeElement === ta && ta.selectionStart !== ta.selectionEnd;
+  bar.classList.toggle('show', active && small);
+}
 
 // ---- ▦ Kanban panosu ----
 function noteStatusKey(note: Note): string {

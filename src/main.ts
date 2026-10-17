@@ -472,12 +472,12 @@ function bindEvents() {
     if (titleInput.readOnly) return; // kilitli not: başlık değişmez
     // debounce
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => updateNote(n.id, { title: titleInput.value }), 400);
+    saveTimer = setTimeout(() => void commitTitle(n.id, titleInput.value), 400);
   });
   titleInput.addEventListener('blur', () => {
     const n = getActiveNote(); if (!n) return;
     if (titleInput.readOnly) return;
-    updateNote(n.id, { title: titleInput.value });
+    void commitTitle(n.id, titleInput.value);
   });
 
   const editorTextarea = document.getElementById('editorTextarea') as HTMLTextAreaElement;
@@ -1248,6 +1248,31 @@ function insertAtTextarea(ta: HTMLTextAreaElement, text: string) {
   ta.setRangeText(text, s, e, 'end');
   ta.focus();
   ta.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+// ---- 🔁 Yeniden adlandır → tüm [[bağlantılar]] güncellenir ----
+function escRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+async function commitTitle(id: string, newTitle: string) {
+  const n = getState().notes.find((x) => x.id === id);
+  if (!n || !newTitle || newTitle === n.title) return;
+  const oldTitle = n.title;
+  const others = getState().notes.filter((x) => x.id !== id && !x.deletedAt && x.title === oldTitle);
+  await updateNote(id, { title: newTitle });
+  if (others.length) return; // aynı adlı başka not var: hedef karışır, dokunma
+  const re = new RegExp('\\[\\[' + escRegex(oldTitle) + '(\\]\\]|\\||#)', 'g');
+  let changed = 0;
+  for (const peer of getState().notes) {
+    if (peer.id === id || peer.locked) continue;
+    if (!peer.content.includes(oldTitle)) continue;
+    const updated = peer.content.replace(re, (_m, tail) => '[[' + newTitle + tail);
+    if (updated !== peer.content) {
+      await updateNote(peer.id, { content: updated });
+      changed++;
+    }
+  }
+  if (changed) showToast('🔁 ' + t('linksUpdated').replace('{n}', String(changed)));
 }
 
 // 📁 klasör başlıklarına not sürükle-bırak taşıma

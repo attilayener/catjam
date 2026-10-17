@@ -126,7 +126,7 @@ function markRecent(id: string) {
   recentNoteIds = [id, ...recentNoteIds.filter((x) => x !== id)].slice(0, 12);
   localStorage.setItem('catjam:recent', JSON.stringify(recentNoteIds));
 }
-let currentView: 'editor' | 'graph' = 'editor';
+let currentView: 'editor' | 'graph' | 'dashboard' = 'editor';
 
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
@@ -141,6 +141,7 @@ function buildShell() {
     <div class="spacer"></div>
     <button class="iconbtn" id="btnNew" title="${t('newNote')}">＋</button>
     <button class="iconbtn" id="btnBacklinks" title="${t('backlinks')}">↔</button>
+    <button class="iconbtn" id="btnDashboard" title="${t('dashTitle')}">🏠</button>
     <button class="iconbtn" id="btnGraph" title="${t('graph')}">⬢</button>
     <button class="iconbtn" id="btnPalette" title="${t('palette')}">⌘</button>
     <button class="iconbtn" id="btnTasks" title="${t('tasks')}">☑</button>
@@ -237,6 +238,7 @@ function buildShell() {
     <div class="editor-status" id="editorStatus" style="display:none;">
       <span id="sbWords">—</span><span>·</span><span id="sbChars"></span><span>·</span><span id="sbPos"></span>
     </div>
+    <div class="dash-wrap" id="dashWrap" style="display:none;"></div>
     <div class="graph-wrap" id="graphWrap" style="display:none;">
       <div class="graph-toolbar">
         <button id="graphFit">Fit</button>
@@ -360,6 +362,7 @@ function bindEvents() {
   document.getElementById('btnBacklinks')!.addEventListener('click', () => toggleSidePanel());
   document.getElementById('closeSidePanel')!.addEventListener('click', () => toggleSidePanel());
   document.getElementById('btnGraph')!.addEventListener('click', () => showGraph());
+  document.getElementById('btnDashboard')!.addEventListener('click', () => toggleDashboard());
   document.getElementById('btnPalette')!.addEventListener('click', () => openCommandPalette());
   document.getElementById('btnTasks')!.addEventListener('click', () => openTasksModal());
   document.getElementById('btnKanban')!.addEventListener('click', () => openKanbanModal());
@@ -2003,6 +2006,7 @@ function showGraph(local = false) {
   document.getElementById('editorBody')!.style.display = 'none';
   document.getElementById('editorHeader')!.style.display = 'none';
   document.getElementById('editorStatus')!.style.display = 'none';
+  document.getElementById('dashWrap')!.style.display = 'none';
   const gw = document.getElementById('graphWrap')!;
   gw.style.display = '';
   toggleSidebar(false);
@@ -2014,8 +2018,183 @@ function showEditor() {
   document.getElementById('editorBody')!.style.display = '';
   document.getElementById('editorHeader')!.style.display = '';
   document.getElementById('graphWrap')!.style.display = 'none';
+  document.getElementById('dashWrap')!.style.display = 'none';
   updateEditorStatus();
   if (graphAnimId) { cancelAnimationFrame(graphAnimId); graphAnimId = null; }
+}
+
+// ---- 🏠 Ana panel ----
+function showDashboard() {
+  currentView = 'dashboard';
+  document.getElementById('editorBody')!.style.display = 'none';
+  document.getElementById('editorHeader')!.style.display = 'none';
+  document.getElementById('editorStatus')!.style.display = 'none';
+  document.getElementById('graphWrap')!.style.display = 'none';
+  document.getElementById('dashWrap')!.style.display = '';
+  toggleSidebar(false);
+  renderDashboard();
+}
+
+function toggleDashboard() {
+  if (currentView === 'dashboard') showEditor();
+  else showDashboard();
+}
+
+function collectDashTasks() {
+  const out: { noteId: string; noteTitle: string; lineIndex: number; done: boolean; text: string; state: string }[] = [];
+  for (const note of getState().notes) {
+    if (note.deletedAt) continue;
+    const lines = note.content.split('\n');
+    lines.forEach((line, idx) => {
+      const m = line.match(/^([\t ]*[-*+] \[)([ xX])(\] .*)$/);
+      if (m) {
+        out.push({ noteId: note.id, noteTitle: note.title, lineIndex: idx, done: m[2].toLowerCase() === 'x', text: m[3].slice(2).trim() || m[3].trim(), state: 'checkbox' });
+        return;
+      }
+      const ls = line.match(/^[\t ]*(?:[-*+]\s+)?\s*(NOW|DOING|TODO|LATER|DONE)\s+(.+)$/i);
+      if (ls) {
+        const stateRaw = ls[1].toUpperCase();
+        out.push({ noteId: note.id, noteTitle: note.title, lineIndex: idx, done: stateRaw === 'DONE', text: ls[2].trim(), state: stateRaw });
+      }
+    });
+  }
+  return out;
+}
+
+function wordStreak(): number {
+  const dw = dayWords();
+  let streak = 0;
+  const d = new Date();
+  if (!((dw[isoDayKey(d)] || 0) > 0)) d.setDate(d.getDate() - 1);
+  for (;;) {
+    const k = isoDayKey(d);
+    if ((dw[k] || 0) > 0) { streak++; d.setDate(d.getDate() - 1); } else break;
+    if (streak > 3650) break;
+  }
+  return streak;
+}
+
+function dashLang(): string {
+  return getState().settings.language === 'tr' ? 'tr-TR' : getState().settings.language === 'de' ? 'de-DE' : getState().settings.language === 'fr' ? 'fr-FR' : 'en-US';
+}
+
+function renderDashboard() {
+  const wrap = document.getElementById('dashWrap');
+  if (!wrap || currentView !== 'dashboard') return;
+  wrap.innerHTML = '';
+  const allNotes = getState().notes.filter((n) => !n.deletedAt);
+  const dw = dayWords();
+  const todayWords = dw[todayKey()] || 0;
+  const goal = dailyGoal();
+  const pct = Math.min(100, Math.round((todayWords / goal) * 100));
+
+  // tepe şerit: tarih + kelimeler + seri
+  const hero = document.createElement('div');
+  hero.className = 'dash-hero';
+  hero.innerHTML = `
+    <div>
+      <div class="dash-date">${new Date().toLocaleDateString(dashLang(), { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</div>
+      <h2 class="dash-title">${t('dashTitle')} 🐾</h2>
+    </div>
+    <div class="dash-hero-stats">
+      <div class="dash-pill" title="${t('statsGoal')}">✍ ${todayWords}/${goal} ${t('statsWordsUnit')}</div>
+      <div class="dash-pill" title="${t('statsStreak')}">🔥 ${wordStreak()} ${t('statsDayUnit')}</div>
+      <div class="dash-pill" title="${t('statsNotes')}">📄 ${allNotes.length}</div>
+    </div>`;
+  wrap.appendChild(hero);
+  const bar = document.createElement('div');
+  bar.className = 'dash-bar';
+  bar.innerHTML = `<div class="dash-bar-fill" style="width:${pct}%"></div>`;
+  wrap.appendChild(bar);
+
+  const grid = document.createElement('div');
+  grid.className = 'dash-grid';
+  wrap.appendChild(grid);
+
+  // ☑ görevler
+  const taskCard = document.createElement('div');
+  taskCard.className = 'dash-card';
+  const tasks = collectDashTasks();
+  const active = tasks.filter((x) => !x.done);
+  taskCard.innerHTML = `<h4>☑ ${t('dashTodayTasks')} <span class="dash-count">${active.length}</span></h4>`;
+  const tl = document.createElement('div');
+  tl.className = 'dash-tasklist';
+  if (!active.length) tl.innerHTML = `<div class="dash-empty">🐾 ${t('noTasks')}</div>`;
+  for (const tk of active.slice(0, 7)) {
+    const row = document.createElement('label');
+    row.className = 'dash-task';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    const txt = document.createElement('div');
+    txt.className = 'dash-task-text';
+    txt.innerHTML = `<span>${escapeHtml(tk.text)}</span><span class="dash-task-note">${escapeHtml(tk.noteTitle)}</span>`;
+    cb.addEventListener('change', async () => {
+      const note = getState().notes.find((n) => n.id === tk.noteId);
+      if (!note || note.locked) { renderDashboard(); return; }
+      const lines = note.content.split('\n');
+      if (tk.state === 'checkbox') {
+        const mm = lines[tk.lineIndex]?.match(/^([\t ]*[-*+] \[)([ xX])(\].*)$/);
+        if (mm) lines[tk.lineIndex] = mm[1] + (mm[2] === ' ' ? 'x' : ' ') + mm[3];
+      } else if (tk.state === 'TODO' || tk.state === 'NOW' || tk.state === 'DOING') {
+        lines[tk.lineIndex] = lines[tk.lineIndex].replace(new RegExp(`^(\\s*(?:[-*+][ \\t]+)?)(?:${tk.state})(\\b)`, 'i'), '$1DONE$2');
+      }
+      await updateNote(tk.noteId, { content: lines.join('\n') });
+      catSay(isTr() ? 'Görev bitti, panoşaa! 🎉' : 'Task done! 🎉');
+      catPoke('happy');
+      renderDashboard();
+    });
+    row.appendChild(cb);
+    row.appendChild(txt);
+    tl.appendChild(row);
+  }
+  taskCard.appendChild(tl);
+  grid.appendChild(taskCard);
+
+  // 🕘 son notlar
+  const recCard = document.createElement('div');
+  recCard.className = 'dash-card';
+  recCard.innerHTML = `<h4>🕘 ${t('dashRecent')}</h4>`;
+  const chips = document.createElement('div');
+  chips.className = 'dash-chips';
+  let recents = recentNoteIds.map((id) => allNotes.find((n) => n.id === id)).filter(Boolean) as typeof allNotes;
+  if (recents.length < 6) {
+    const tops = allNotes.slice().sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 12);
+    for (const n of tops) if (!recents.find((x) => x.id === n.id)) recents.push(n);
+  }
+  recents = recents.slice(0, 8);
+  if (!recents.length) chips.innerHTML = `<div class="dash-empty">${t('emptyNoNotes')}</div>`;
+  for (const n of recents) {
+    const chip = document.createElement('button');
+    chip.className = 'dash-chip';
+    chip.textContent = (n.locked ? '🔒 ' : '') + (n.title || t('untitled'));
+    chip.addEventListener('click', () => { setActive(n.id); showEditor(); renderAll(); });
+    chips.appendChild(chip);
+  }
+  recCard.appendChild(chips);
+  grid.appendChild(recCard);
+
+  // ⚡ hızlı eylemler
+  const actCard = document.createElement('div');
+  actCard.className = 'dash-card';
+  actCard.innerHTML = `<h4>⚡ ${t('dashActions')}</h4>`;
+  const acts = document.createElement('div');
+  acts.className = 'dash-chips';
+  const mk = (label: string, fn: () => void) => {
+    const b = document.createElement('button');
+    b.className = 'dash-chip dash-action';
+    b.textContent = label;
+    b.addEventListener('click', fn);
+    acts.appendChild(b);
+  };
+  mk('＋ ' + t('newNoteCmd'), () => { showEditor(); newNoteAndRender(); });
+  mk('📅 ' + t('dailyNoteCmd'), () => { showEditor(); dailyNote(); });
+  mk('☑ ' + t('tasksTitle'), () => openTasksModal());
+  mk('📋 ' + t('kanban'), () => openKanbanModal());
+  mk('⬢ ' + t('graph'), () => showGraph());
+  mk('🗑 ' + t('trash'), () => openTrashModal());
+  mk('⚙ ' + t('settingsTitle'), () => openSettings());
+  actCard.appendChild(acts);
+  grid.appendChild(actCard);
 }
 
 // Graph
@@ -2405,6 +2584,7 @@ function openCommandPalette() {
     const f = filter.toLowerCase();
     const cmds = [
       { label: t('newNoteCmd'), hint: 'Ctrl+N', action: () => { newNoteAndRender(); } },
+      { label: t('dashTitle'), hint: 'Ctrl+D', action: () => { toggleDashboard(); } },
       { label: t('dailyNoteCmd'), hint: '', action: () => dailyNote() },
       { label: t('toggleGraph'), hint: '', action: () => showGraph() },
       { label: 'Local graph (active note)', hint: '', action: () => showGraph(true) },
@@ -2480,6 +2660,7 @@ function globalKeydown(e: KeyboardEvent) {
   if (mod && e.key.toLowerCase() === 'p') { e.preventDefault(); openCommandPalette(); }
   if (mod && e.key.toLowerCase() === 'n') { e.preventDefault(); newNoteAndRender(); }
   if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); quickSwitcher(); }
+  if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); toggleDashboard(); }
   if (e.key === 'Escape') {
     document.querySelectorAll('.modal-backdrop,.cmd-backdrop').forEach((el) => el.remove());
     const sp = document.getElementById('sidePanel');

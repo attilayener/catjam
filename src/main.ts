@@ -12,7 +12,7 @@ import { mountCM } from './cm';
 import { initWhisperLocal, transcribeBlob, whisperReadyFor, whisperCached, whisperSupported, deleteWhisperModel, WHISPER_MODELS as WHISPER_MODEL_META } from './voice';
 import { encryptText, decryptText } from './secure';
 import { startAmbient, stopAmbient, setAmbientVolume, ambientOn } from './ambient';
-import { mountCat, catPoke, catAutoWiggle, catEnabled, setCatEnabled, setCatSkin, setCatSound, catKeywordReaction, catSay, CAT_SKINS } from './cat';
+import { mountCat, catPoke, catAutoWiggle, catEnabled, setCatEnabled, setCatSkin, setCatSound, catKeywordReaction, catSay, CAT_SKINS, catName, setCatName, catQuipsRaw, setCatQuips } from './cat';
 
 const LOCKED_PLACEHOLDER = '[🔒 Encrypted — Cat Jam]';
 
@@ -2109,6 +2109,15 @@ function openSettings() {
           <span style="font-size:12px;color:var(--text-muted);">${catSoundCurrent() ? t('catOn') : t('catOff')}</span>
         </label>
       </div>
+      <div style="margin-top:10px;">
+        <div style="font-size:13px;color:var(--text-muted);margin-bottom:6px;">🏷 ${t('catName')}</div>
+        <input id="catNameInput" class="search-input" style="width:100%;" value="${escapeHtml(catName())}" placeholder="${t('catNamePh')}" maxlength="24" />
+      </div>
+      <div style="margin-top:10px;">
+        <div style="font-size:13px;color:var(--text-muted);margin-bottom:6px;">💬 ${t('catPhrases')}</div>
+        <textarea id="catQuipsInput" class="search-input" rows="3" spellcheck="false" style="width:100%;resize:vertical;" placeholder="${t('catPhrasesPh')}">${escapeHtml(catQuipsRaw())}</textarea>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:4px;line-height:1.5;">${t('catPhrasesHint')}</div>
+      </div>
     </div>
     <div style="margin-bottom:12px;">
       <div style="font-size:13px;color:var(--text-muted);margin-bottom:6px;">${t('writeProfile')}</div>
@@ -2200,6 +2209,17 @@ function openSettings() {
   catSkinSelect?.addEventListener('change', () => {
     setCatSkin(catSkinSelect.value);
     catPoke('happy');
+  });
+  const catNameInput = modal.querySelector('#catNameInput') as HTMLInputElement | null;
+  catNameInput?.addEventListener('change', () => {
+    setCatName(catNameInput.value);
+    catPoke('happy');
+    catSay('{name} ne istersen!');
+  });
+  const catQuipsInput = modal.querySelector('#catQuipsInput') as HTMLTextAreaElement | null;
+  catQuipsInput?.addEventListener('change', () => {
+    setCatQuips(catQuipsInput.value);
+    catSay('{name} yeni repertuvar!');
   });
   const label = modal.querySelector('#fontSizeLabel') as HTMLSpanElement;
   range.addEventListener('input', () => {

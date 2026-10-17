@@ -34,9 +34,22 @@ export function setCatSound(on: boolean) {
   save('catjam:catsound', on ? '1' : '0');
 }
 
+// ---------- Kişiselleştirme: ad + konuşma cümleleri ----------
+export function catName(): string { return store('catjam:catname') || ''; }
+export function setCatName(n: string) { save('catjam:catname', n.trim().slice(0, 24)); }
+export function catQuipsRaw(): string { return store('catjam:catquips') || ''; }
+export function setCatQuips(raw: string) { save('catjam:catquips', raw.slice(0, 600)); }
+function customQuips(): string[] {
+  return catQuipsRaw().split(/\r?\n|;/).map((s) => s.trim()).filter(Boolean);
+}
+function quipPool(): string[] {
+  const custom = customQuips();
+  return custom.length ? custom : (isTr() ? QUIPS_TR : QUIPS_EN);
+}
+
 // ---------- Konuşma balonu ----------
-const QUIPS_TR = ['Miyav!', 'Pur pur… 😺', 'Notlar kayıtlı, minnettarım.', 'Bugün ne yazacağız?', 'Bana mama, sana ilham.', 'Kafein + kedi = verim.', 'Hitimeli bir kedi dayım.'];
-const QUIPS_EN = ['Meow!', 'Purrr… 😺', 'Notes saved — you\'re welcome.', 'What are we writing today?', 'Catnip and coffee time.', 'Caffeine + cat = flow.', 'Purr productivity!'];
+const QUIPS_TR = ['Miyav!', 'Pur pur… 😺', 'Notlar kayıtlı, minnettarım.', 'Bugün ne yazacağız?', 'Bana mama, sana ilham.', 'Kafein + kedi = verim.', 'Hitimeli bir kedi dayım.', 'Ben {name}, parmak şefin!', '{name} + not = şaheser.'];
+const QUIPS_EN = ['Meow!', 'Purrr… 😺', 'Notes saved — you\'re welcome.', 'What are we writing today?', 'Catnip and coffee time.', 'Caffeine + cat = flow.', 'Purr productivity!', 'I\'m {name}, chief of notes.', '{name} + notes = masterpiece.'];
 const NAG_TR = ['Uzun zaman oldu miyav… bir not mu?', 'Klavyeyi tırmalamamam mı lazım 🙀', 'Bugün 0 not? Edemem!'];
 const NAG_EN = ['It\'s been a while… meow.', 'Should I scratch the keyboard? 🙀', 'Zero notes today? Unmeow-lievable!'];
 const LEVELUP_TR = ['Seviye {n}! 🎀 Aksesuvarım geldi!', 'Seviye {n} benim! Balık ödülü?'];
@@ -48,7 +61,7 @@ function say(text: string | HTMLElement, ms = 3200) {
   const bubble = document.getElementById('catBubble') as HTMLDivElement | null;
   if (!root || !bubble) return;
   bubble.innerHTML = '';
-  if (typeof text === 'string') bubble.textContent = text;
+  if (typeof text === 'string') bubble.textContent = text.replace(/\{name\}/g, catName() || 'Jam');
   else bubble.appendChild(text);
   bubble.classList.add('show');
   root.classList.add('talking');
@@ -220,7 +233,7 @@ export function mountCat() {
       return;
     }
     meow();
-    say(quip(isTr() ? QUIPS_TR : QUIPS_EN));
+    say(quip(quipPool()));
     poke('wiggle');
   });
 

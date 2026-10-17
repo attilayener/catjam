@@ -181,7 +181,7 @@ export async function setEditorMode(mode: 'edit' | 'preview' | 'split') {
   emit();
 }
 
-export async function setLanguage(lang: 'en' | 'tr') {
+export async function setLanguage(lang: 'en' | 'tr' | 'de' | 'fr') {
   state.settings.language = lang;
   applyLanguage(lang);
   await saveSetting('language', lang);

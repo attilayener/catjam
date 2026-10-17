@@ -16,7 +16,7 @@ export interface AppSettings {
   theme: string;
   editorMode: 'edit' | 'preview' | 'split';
   fontSize: number;
-  language: 'en' | 'tr';
+  language: 'en' | 'tr' | 'de' | 'fr';
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {

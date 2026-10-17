@@ -2180,7 +2180,7 @@ function openSettings() {
     langSelect.appendChild(opt);
   }
   langSelect.addEventListener('change', async () => {
-    await setLanguage(langSelect.value as 'en' | 'tr');
+    await setLanguage(langSelect.value as 'en' | 'tr' | 'de' | 'fr');
     // rebuild shell to apply language
     backdrop.remove();
     buildShell();

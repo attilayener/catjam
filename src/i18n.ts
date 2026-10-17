@@ -58,6 +58,10 @@ const dict: Record<Lang, Record<string, string>> = {
     'favorites': 'Favorites',
     'favoriteToggle': 'Toggle favorite',
     'unlinkedRefs': 'Unlinked references',
+    'voiceTyping': 'Voice typing',
+    'voiceListening': 'Listening… click to stop',
+    'voiceUnsupported': 'Speech recognition is not supported in this browser. Try Chrome or Edge.',
+    'voiceDeny': 'Microphone permission denied.',
   },
   tr: {
     'brand': 'Cat Jam',
@@ -116,6 +120,10 @@ const dict: Record<Lang, Record<string, string>> = {
     'favorites': 'Favoriler',
     'favoriteToggle': 'Favorilere ekle/çıkar',
     'unlinkedRefs': 'Bağlantısız referanslar',
+    'voiceTyping': 'Sesli yazım',
+    'voiceListening': 'Dinleniyor… durdurmak için tekrar tıkla',
+    'voiceUnsupported': 'Bu tarayıcı ses tanımayı desteklemiyor. Chrome veya Edge deneyin.',
+    'voiceDeny': 'Mikrofon izni reddedildi.',
   },
 };
 

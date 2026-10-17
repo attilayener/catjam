@@ -3,7 +3,7 @@ import { initStore, getState, subscribe, createNote, updateNote, deleteNote, set
 import { renderMarkdown, extractWikiLinks, extractTags } from './markdown';
 import { THEMES } from './themes';
 import { saveSetting, db } from './db';
-import { t, availableLanguages } from './i18n';
+import { t, availableLanguages, getLanguage } from './i18n';
 import { saveImage, loadImages } from './images';
 import { getVaultHandle, ensureVaultPermission, saveImageToVault, uniqueVaultPath, createVaultNote, loadVaultImages } from './vault';
 
@@ -91,6 +91,7 @@ function buildShell() {
         <button data-mode="preview">${t('preview')}</button>
         <button data-mode="split">${t('split')}</button>
       </div>
+      <button class="iconbtn" id="btnVoice" title="${t('voiceTyping')}">🎙</button>
       <button class="iconbtn" id="btnStar" title="${t('favoriteToggle')}">☆</button>
       <button class="iconbtn" id="btnDelete" title="${t('deleteNote')}">🗑</button>
       <button class="iconbtn" id="btnProps" title="${t('props')}" style="width:auto;padding:4px 8px;font-size:12px;">${t('props')}</button>
@@ -217,6 +218,49 @@ function bindEvents() {
   document.getElementById('btnFocus')!.addEventListener('click', () => document.body.classList.toggle('focus-mode'));
   document.getElementById('exitFocus')!.addEventListener('click', () => document.body.classList.remove('focus-mode'));
   document.getElementById('btnSettings')!.addEventListener('click', () => openSettings());
+  // Sesli yazım (Web Speech API)
+  const voiceBtn = document.getElementById('btnVoice')!;
+  const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+  if (!SR) {
+    voiceBtn.addEventListener('click', () => alert(t('voiceUnsupported')));
+  } else {
+    voiceBtn.addEventListener('click', () => {
+      if ((voiceBtn as any).__listening && (voiceBtn as any).__rec) {
+        (voiceBtn as any).__rec.stop();
+        return;
+      }
+      const rec = new SR();
+      (voiceBtn as any).__rec = rec;
+      rec.continuous = true;
+      rec.interimResults = true;
+      rec.lang = getLanguage() === 'tr' ? 'tr-TR' : 'en-US';
+      rec.onstart = () => {
+        (voiceBtn as any).__listening = true;
+        voiceBtn.classList.add('recording');
+        voiceBtn.textContent = '⏹';
+        voiceBtn.title = t('voiceListening');
+      };
+      rec.onend = () => {
+        (voiceBtn as any).__listening = false;
+        voiceBtn.classList.remove('recording');
+        voiceBtn.textContent = '🎙';
+        voiceBtn.title = t('voiceTyping');
+        const ta = document.getElementById('editorTextarea') as HTMLTextAreaElement | null;
+        ta?.focus();
+      };
+      rec.onerror = (e: any) => {
+        if (e && e.error === 'not-allowed') alert(t('voiceDeny'));
+      };
+      rec.onresult = (e: any) => {
+        let finalText = '';
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          if (e.results[i].isFinal) finalText += e.results[i][0].transcript;
+        }
+        if (finalText.trim()) insertAtCursor(finalText.trim() + ' ');
+      };
+      try { rec.start(); } catch { /* already started */ }
+    });
+  }
   document.getElementById('btnStar')!.addEventListener('click', async () => {
     const n = getActiveNote(); if (!n) return;
     favorites = favorites.includes(n.id) ? favorites.filter((x) => x !== n.id) : [n.id, ...favorites];
@@ -1490,10 +1534,15 @@ function acceptSuggestionAt(i: number) {
   acceptSuggestion();
 }
 function insertAtCursor(text: string) {
-  const ta = document.getElementById('editorTextarea') as HTMLTextAreaElement;
-  const s = ta.selectionStart;
-  ta.value = ta.value.slice(0, s) + text + ta.value.slice(ta.selectionEnd);
-  ta.selectionStart = ta.selectionEnd = s + text.length;
+  const ta = document.getElementById('editorTextarea') as HTMLTextAreaElement | null;
+  if (!ta) return;
+  const start = ta.selectionStart ?? ta.value.length;
+  const end = ta.selectionEnd ?? start;
+  const needsSpace = start > 0 && !/[\s\n({\[>#*-]$/.test(ta.value[start - 1]);
+  const chunk = (needsSpace ? ' ' : '') + text;
+  ta.value = ta.value.slice(0, start) + chunk + ta.value.slice(end);
+  const pos = start + chunk.length;
+  ta.selectionStart = ta.selectionEnd = pos;
   ta.dispatchEvent(new Event('input'));
 }
 async function handleFiles(files: File[]) {

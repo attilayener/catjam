@@ -186,6 +186,7 @@ function buildShell() {
       <button class="iconbtn" id="btnImportRoam" title="Import Roam JSON">Roam</button>
       <button class="iconbtn" id="btnTrash" title="${t('trash')}">🗑 ${t('trash')}</button>
       <button class="iconbtn" id="btnShareHtml" title="${t('shareHtml')}">🌐 ${t('shareHtml')}</button>
+      <button class="iconbtn" id="btnPdf" title="${t('exportPdf')}">📄 PDF</button>
       <button class="iconbtn" id="btnWeekly" title="${t('weeklyReport')}">📊 ${t('weeklyReport')}</button>
       <button class="iconbtn" id="btnStats" title="${t('statsTitle')}">📈 ${t('statsTitle')}</button>
     </div>
@@ -227,6 +228,9 @@ function buildShell() {
         <div id="lockErr" style="color:#ef4444;font-size:12px;min-height:16px;margin-top:4px;"></div>
         <button class="iconbtn" id="lockUnlock" style="width:auto;padding:8px 18px;font-size:13px;background:var(--accent-soft);border-color:var(--accent);color:var(--accent);">🔓 ${t('unlockBtn')}</button>
       </div>
+    </div>
+    <div class="editor-status" id="editorStatus" style="display:none;">
+      <span id="sbWords">—</span><span>·</span><span id="sbChars"></span><span>·</span><span id="sbPos"></span>
     </div>
     <div class="graph-wrap" id="graphWrap" style="display:none;">
       <div class="graph-toolbar">
@@ -287,7 +291,10 @@ function bindEvents() {
   if (!(window as any).__fmtBarBound) {
     (window as any).__fmtBarBound = true;
     buildFmtBar();
-    document.addEventListener('selectionchange', updateFmtBarVisibility);
+    document.addEventListener('selectionchange', () => {
+      updateFmtBarVisibility();
+      updateEditorStatus();
+    });
   }
   document.getElementById('hamburger')!.addEventListener('click', () => toggleSidebar(true));
   document.getElementById('sidebarBackdrop')!.addEventListener('click', () => toggleSidebar(false));
@@ -342,6 +349,7 @@ function bindEvents() {
   });
   document.getElementById('btnTrash')!.addEventListener('click', () => openTrashModal());
   document.getElementById('btnShareHtml')!.addEventListener('click', () => { void exportCurrentNoteHtml(); });
+  document.getElementById('btnPdf')!.addEventListener('click', () => { void exportCurrentNotePdf(); });
   document.getElementById('btnWeekly')!.addEventListener('click', () => { void openWeeklyReport(); });
   document.getElementById('btnStats')!.addEventListener('click', () => openStatsModal());
   document.getElementById('btnBacklinks')!.addEventListener('click', () => toggleSidePanel());
@@ -754,6 +762,7 @@ function updatePreview(content: string) {
   const pc = document.getElementById('previewContent')!;
   pc.innerHTML = renderMarkdown(resolveRoamEmbeds(content));
   updateReadingTime(content);
+  updateEditorStatus();
   // Outliner collapse toggles
   requestAnimationFrame(() => {
     pc.querySelectorAll('li').forEach((li) => {
@@ -1253,10 +1262,10 @@ function slugFileName(title: string): string {
   return slug + '.html';
 }
 
-async function exportCurrentNoteHtml() {
+async function buildPrintDocHtml(): Promise<string | null> {
   const n = getActiveNote();
-  if (!n) return;
-  if (isEditorLocked(n)) { alert(t('lockedTitle') + ' — ' + t('lockedPlaceholder')); return; }
+  if (!n) return null;
+  if (isEditorLocked(n)) { alert(t('lockedTitle') + ' — ' + t('lockedPlaceholder')); return null; }
   const textarea = document.getElementById('editorTextarea') as HTMLTextAreaElement | null;
   const content = textarea && !textarea.readOnly ? textarea.value : n.content;
   // fresh preview (KaTeX tıklama anında işlensin)
@@ -1333,6 +1342,14 @@ ${clone.innerHTML}
 </div>
 </body>
 </html>`;
+  return doc;
+}
+
+async function exportCurrentNoteHtml() {
+  const n = getActiveNote();
+  if (!n) return;
+  const doc = await buildPrintDocHtml();
+  if (!doc) return;
   const blob = new Blob([doc], { type: 'text/html;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1342,6 +1359,57 @@ ${clone.innerHTML}
   setTimeout(() => URL.revokeObjectURL(url), 4000);
   showToast('🌐 ' + t('exportedHtml'));
   catPoke('happy');
+}
+
+async function exportCurrentNotePdf() {
+  const n = getActiveNote();
+  if (!n) return;
+  const doc = await buildPrintDocHtml();
+  if (!doc) return;
+  const dt = (window as any).catjamDesktop;
+  if (dt && typeof dt.printToPDF === 'function') {
+    showToast('📄 ' + t('pdfWorking'));
+    try {
+      const res = await dt.printToPDF(doc, slugFileName(n.title));
+      if (res && res.ok) showToast('📄 ' + t('pdfSaved', { path: res.path }));
+      else if (res && !res.canceled) showToast('❌ ' + t('pdfFail'));
+      else return; // iptal edildi
+    } catch {
+      showToast('❌ ' + t('pdfFail'));
+    }
+    return;
+  }
+  // tarayıcı / PWA: gizli iframe + print diyalogu ("PDF olarak kaydet" yazıcısını seçer)
+  const f = document.createElement('iframe');
+  f.style.cssText = 'position:fixed;left:-10000px;top:0;width:900px;height:1100px;border:0;visibility:hidden;';
+  f.srcdoc = doc;
+  f.onload = () => {
+    try {
+      const cw = f.contentWindow;
+      if (cw) { cw.focus(); cw.print(); }
+    } catch { /* CSP'de engellenirse toast */ }
+    setTimeout(() => f.remove(), 60000);
+  };
+  document.body.appendChild(f);
+}
+
+// ---- 📊 Canlı durum çubuğu ----
+function updateEditorStatus() {
+  const el = document.getElementById('editorStatus');
+  if (!el) return;
+  const ta = document.getElementById('editorTextarea') as HTMLTextAreaElement | null;
+  const note = getActiveNote();
+  if (!ta || !note || note.locked) { el.style.display = 'none'; return; }
+  el.style.display = '';
+  const val = ta.value;
+  const words = val.trim() ? val.trim().split(/\s+/).filter(Boolean).length : 0;
+  const lines = val.slice(0, ta.selectionStart).split('\n');
+  const w = document.getElementById('sbWords');
+  const c = document.getElementById('sbChars');
+  const p = document.getElementById('sbPos');
+  if (w) w.textContent = t('sbWords', { n: String(words) });
+  if (c) c.textContent = t('sbChars', { n: String(val.length) });
+  if (p) p.textContent = t('sbPos', { a: String(lines.length), b: String((lines[lines.length - 1] || '').length + 1) });
 }
 
 // ---- Toast (aksiyonlu bildirim) ----
@@ -1599,6 +1667,7 @@ function renderSidePanel() {
 function renderAll() {
   renderNoteList();
   renderEditor();
+  updateEditorStatus();
   if (currentView === 'graph') drawGraph();
 }
 
@@ -1607,6 +1676,7 @@ function showGraph(local = false) {
   (window as any).__graphLocal = local;
   document.getElementById('editorBody')!.style.display = 'none';
   document.getElementById('editorHeader')!.style.display = 'none';
+  document.getElementById('editorStatus')!.style.display = 'none';
   const gw = document.getElementById('graphWrap')!;
   gw.style.display = '';
   toggleSidebar(false);
@@ -1618,6 +1688,7 @@ function showEditor() {
   document.getElementById('editorBody')!.style.display = '';
   document.getElementById('editorHeader')!.style.display = '';
   document.getElementById('graphWrap')!.style.display = 'none';
+  updateEditorStatus();
   if (graphAnimId) { cancelAnimationFrame(graphAnimId); graphAnimId = null; }
 }
 
@@ -1997,6 +2068,7 @@ function openCommandPalette() {
       { label: t('modePreview'), hint: '', action: () => { setEditorMode('preview'); applyMode('preview'); } },
       { label: t('modeSplit'), hint: '', action: () => { setEditorMode('split'); applyMode('split'); } },
       { label: 'Add block reference ID', hint: '', action: () => addBlockIdToCurrentLine() },
+      { label: t('exportPdf'), hint: '', action: () => { void exportCurrentNotePdf(); } },
     ].filter((c) => c.label.toLowerCase().includes(f));
     let candidateNotes: any[] = getState().notes;
     if (f) {

@@ -267,6 +267,16 @@ body.focus-mode #catMascot { display: none; }
 .fmt-btn:active { transform: scale(.92); }
 .fmt-btn code { font-family: var(--mono); font-size: 11.5px; }
 
+/* 📊 Canlı durum çubuğu */
+.editor-status {
+  display: flex; gap: 8px; align-items: center;
+  padding: 7px 14px; border-top: 1px solid var(--border);
+  background: var(--panel);
+  font-family: var(--mono); font-size: 11px; color: var(--text-muted);
+  user-select: none; white-space: nowrap; overflow: hidden;
+  flex-shrink: 0;
+}
+
 /* istatistik panosu */
 .stat-chip {
   display: inline-flex; align-items: center; gap: 5px;

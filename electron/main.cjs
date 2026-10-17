@@ -2,7 +2,7 @@
 // Üretimde dist/ klasörünü kendi loopback HTTP sunucusuyla servis eder:
 // localhost = güvenli bağlam → File System Access, IndexedDB, service worker,
 // WASM streaming (whisper) hepsi sorunsuz çalışır.
-const { app, BrowserWindow, Menu, shell } = require('electron');
+const { app, BrowserWindow, Menu, shell, ipcMain, dialog } = require('electron');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -12,6 +12,32 @@ const DEV_URL = process.env.ELECTRON_START_URL || '';
 const BASE_PORT = 41737;
 
 let win = null;
+
+// Notu PDF'e yaz: renderer tam HTML dokümanını gönderir; gizli pencerede
+// açıp printToPDF ile A4 PDF üretir, kaydetme diyaloğunu gösterir.
+ipcMain.handle('catjam:print-to-pdf', async (_evt, html, fileName) => {
+  const parent = BrowserWindow.getAllWindows().find((w) => w.isVisible());
+  const tmp = path.join(app.getPath('temp'), `catjam-print-${Date.now()}.html`);
+  fs.writeFileSync(tmp, html, 'utf8');
+  const w = new BrowserWindow({ show: false, webPreferences: { offscreen: true } });
+  try {
+    await w.loadURL('file:///' + tmp.replace(/\\/g, '/'));
+    await new Promise((r) => setTimeout(r, 350)); // görseller/layout otursun
+    const data = await w.webContents.printToPDF({ printBackground: true, pageSize: 'A4' });
+    const { canceled, filePath } = await dialog.showSaveDialog(parent || w, {
+      title: 'Cat Jam — PDF',
+      defaultPath: (fileName || 'CatJam-not') + '.pdf',
+    });
+    if (canceled || !filePath) return { ok: false, canceled: true };
+    fs.writeFileSync(filePath, data);
+    return { ok: true, path: filePath };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  } finally {
+    try { w.destroy(); } catch {}
+    try { fs.unlinkSync(tmp); } catch {}
+  }
+});
 
 const MIME = {
   '.html': 'text/html',
@@ -86,6 +112,7 @@ function createWindow(loadUrl) {
       contextIsolation: true,
       nodeIntegration: false,
       backgroundThrottling: false,
+      preload: path.join(__dirname, 'preload.cjs'),
     },
   });
   win.loadURL(loadUrl);

@@ -1,4 +1,5 @@
 import './style.css';
+import katexCss from 'katex/dist/katex.min.css?inline';
 import { initStore, getState, subscribe, createNote, updateNote, deleteNote, restoreNote, deletedNotes, setActive, setSearch, setTheme, setEditorMode, getActiveNote, backlinksOf, findNoteByTitle, filteredNotes, openVault, setLanguage, reorderNotes } from './store';
 import { renderMarkdown, extractWikiLinks, extractTags } from './markdown';
 import { THEMES } from './themes';
@@ -174,6 +175,7 @@ function buildShell() {
       <button class="iconbtn" id="btnImport" title="Import">⬆ Import</button>
       <button class="iconbtn" id="btnImportRoam" title="Import Roam JSON">Roam</button>
       <button class="iconbtn" id="btnTrash" title="${t('trash')}">🗑 ${t('trash')}</button>
+      <button class="iconbtn" id="btnShareHtml" title="${t('shareHtml')}">🌐 ${t('shareHtml')}</button>
     </div>
   `;
 
@@ -320,6 +322,7 @@ function bindEvents() {
     input.click();
   });
   document.getElementById('btnTrash')!.addEventListener('click', () => openTrashModal());
+  document.getElementById('btnShareHtml')!.addEventListener('click', () => { void exportCurrentNoteHtml(); });
   document.getElementById('btnBacklinks')!.addEventListener('click', () => toggleSidePanel());
   document.getElementById('closeSidePanel')!.addEventListener('click', () => toggleSidePanel());
   document.getElementById('btnGraph')!.addEventListener('click', () => showGraph());
@@ -919,6 +922,111 @@ function renderNoteList() {
 
 function escapeHtml(s: string) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// ---- Tek dosya HTML paylaşımı ----
+function blobToDataURL(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(String(fr.result));
+    fr.onerror = () => reject(fr.error);
+    fr.readAsDataURL(blob);
+  });
+}
+
+function slugFileName(title: string): string {
+  const slug = title.toLowerCase().replace(/[^\w\u00c0-\u024f]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'not';
+  return slug + '.html';
+}
+
+async function exportCurrentNoteHtml() {
+  const n = getActiveNote();
+  if (!n) return;
+  if (isEditorLocked(n)) { alert(t('lockedTitle') + ' — ' + t('lockedPlaceholder')); return; }
+  const textarea = document.getElementById('editorTextarea') as HTMLTextAreaElement | null;
+  const content = textarea && !textarea.readOnly ? textarea.value : n.content;
+  // fresh preview (KaTeX tıklama anında işlensin)
+  updatePreview(content);
+  await new Promise((r) => setTimeout(r, 400)); // mermaid/kat async bitisi
+  const pc = document.getElementById('previewContent')!;
+  const clone = pc.cloneNode(true) as HTMLElement;
+  // klonda mermaid henüz render olmadıysa şimdi dene
+  try {
+    const pending = Array.from(clone.querySelectorAll('.mermaid')) as unknown as HTMLElement[];
+    if (pending.length && !pending[0].querySelector('svg')) {
+      const { default: mermaid } = await import('mermaid');
+      mermaid.initialize({ startOnLoad: false });
+      await mermaid.run({ nodes: pending });
+    }
+  } catch (e) {}
+  // blob: görselleri dataURL'e çevir (dosya bağımsız olsun)
+  for (const img of Array.from(clone.querySelectorAll('img'))) {
+    const src = img.getAttribute('src') || '';
+    if (src.startsWith('blob:')) {
+      try {
+        const resp = await fetch(src);
+        img.setAttribute('src', await blobToDataURL(await resp.blob()));
+      } catch (e) { /* görsel atlanır */ }
+    }
+  }
+  const title = n.title || 'Cat Jam';
+  const when = new Date().toLocaleString();
+  const doc = `<!DOCTYPE html>
+<html lang="${getState().settings.language}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(title)}</title>
+<style>${katexCss}</style>
+<style>
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 40px 20px 80px; background: #faf9f7; color: #33312e; font-family: Georgia, 'Times New Roman', serif; line-height: 1.65; }
+.page { max-width: 760px; margin: 0 auto; }
+h1, h2, h3, h4, h5, h6 { color: #1a1917; line-height: 1.3; font-family: Georgia, serif; margin: 1.4em 0 0.5em; }
+h1 { font-size: 2em; margin-top: 0; border-bottom: 1px solid #e5e2dc; padding-bottom: 8px; }
+p { margin: 0.75em 0; }
+a { color: #0f6b5f; }
+blockquote { margin: 1em 0; padding: 2px 14px; border-left: 3px solid #d8d4cc; color: #6b675f; }
+code { background: #f0ede7; border-radius: 4px; padding: 2px 5px; font-family: ui-monospace, 'Cascadia Code', Consolas, monospace; font-size: 0.9em; }
+pre { background: #2d2a26; color: #ece9e2; border-radius: 8px; padding: 14px 16px; overflow: auto; }
+pre code { background: none; color: inherit; }
+table { border-collapse: collapse; width: 100%; margin: 1em 0; font-size: 0.95em; }
+th, td { border: 1px solid #e0dcd4; padding: 7px 10px; text-align: left; }
+th { background: #f2efe9; }
+img { max-width: 100%; border-radius: 8px; }
+hr { border: none; border-top: 1px solid #e5e2dc; margin: 2em 0; }
+ul, ol { padding-left: 1.5em; }
+.checklist-item { list-style: none; margin-left: -1.2em; }
+input[type="checkbox"] { margin-right: 6px; }
+.wiki-link { color: #0f6b5f; text-decoration: none; border-bottom: 1px dotted #0f6b5f99; }
+.callout { border-radius: 10px; padding: 12px 16px; margin: 1em 0; background: #f2efe9; border-left: 4px solid #8a857c; }
+.callout-title { font-weight: 700; margin-bottom: 4px; font-size: 0.95em; }
+.callout-note { background: #eef4fa; border-left-color: #3b82c4; } .callout-tip { background: #ecf8f1; border-left-color: #2e9e63; }
+.callout-important { background: #fdf3e7; border-left-color: #d97706; } .callout-warning { background: #fdf6ec; border-left-color: #d9a406; }
+.callout-danger { background: #fdeeee; border-left-color: #d9534f; } .callout-quote { background: #f4f2ee; border-left-color: #8a857c; }
+.block-prop { display: inline-block; background: #f0ede7; border-radius: 6px; padding: 1px 8px; font-size: 0.8em; font-family: ui-monospace, monospace; }
+.mermaid { text-align: center; margin: 1em 0; }
+.foot { margin-top: 40px; padding-top: 12px; border-top: 1px solid #e5e2dc; color: #9a958c; font-size: 0.8em; font-style: italic; }
+@media print { body { background: #fff; padding: 0; } .page { max-width: none; } }
+</style>
+</head>
+<body>
+<div class="page">
+<h1>${escapeHtml(title)}</h1>
+${clone.innerHTML}
+<div class="foot">${escapeHtml(when)} · 🐱 Cat Jam ile oluşturuldu</div>
+</div>
+</body>
+</html>`;
+  const blob = new Blob([doc], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = slugFileName(n.title);
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  showToast('🌐 ' + t('exportedHtml'));
 }
 
 // ---- Toast (aksiyonlu bildirim) ----

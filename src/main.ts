@@ -603,6 +603,17 @@ function bindEvents() {
 
   document.getElementById('graphBack')!.addEventListener('click', () => showEditor());
   document.getElementById('graphFit')!.addEventListener('click', () => fitGraph());
+  ensureLightbox();
+  document.getElementById('previewContent')!.addEventListener('click', (e) => {
+    const img = (e.target as HTMLElement).closest('img') as HTMLImageElement | null;
+    if (!img) return;
+    const src = img.currentSrc || img.src;
+    if (!src) return;
+    const lb = document.getElementById('lightbox') as HTMLDivElement | null;
+    if (!lb) return;
+    (lb.querySelector('img') as HTMLImageElement).src = src;
+    lb.classList.add('show');
+  });
   window.addEventListener('keydown', globalKeydown);
 
   // auto create first note if none
@@ -779,6 +790,17 @@ async function prepareWhisperModel() {
 function toggleSidebar(open: boolean) {
   document.getElementById('sidebar')!.classList.toggle('open', open);
   document.getElementById('sidebarBackdrop')!.classList.toggle('open', open);
+}
+
+// ---- 🖼 Görsel lightbox: önizlemedeki resme tıkla → tam ekran ----
+function ensureLightbox() {
+  if (document.getElementById('lightbox')) return;
+  const lb = document.createElement('div');
+  lb.className = 'lightbox';
+  lb.id = 'lightbox';
+  lb.innerHTML = '<img alt="preview" />';
+  lb.addEventListener('click', () => lb.classList.remove('show'));
+  document.body.appendChild(lb);
 }
 
 function toggleHamburger() {
@@ -2725,6 +2747,7 @@ function globalKeydown(e: KeyboardEvent) {
   if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); toggleDashboard(); }
   if (e.key === 'Escape') {
     document.querySelectorAll('.modal-backdrop,.cmd-backdrop').forEach((el) => el.remove());
+    document.getElementById('lightbox')?.classList.remove('show');
     const sp = document.getElementById('sidePanel');
     if (sp && sp.classList.contains('open')) toggleSidePanel();
   }

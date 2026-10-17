@@ -54,9 +54,15 @@ npm run build    # dist/ üretimi (tsc + vite)
 
 ### Elektron Masaüstü (Windows)
 ```bash
-npm run exe      # dist + NSIS kurulumcu: release/Cat Jam Setup x.x.x.exe
+npm run exe      # dist + paketleme: release/ içinde 2 dosya üretilir:
+                 #   1) Cat Jam Setup x.x.x.exe  → klasik kurulum (Başlat menüsü kısayolu)
+                 #   2) Cat Jam x.x.x.exe        → PORTABLE: çift tıkla, kurulum yok
 npm run app      # derle + kurulumcu olmadan hemen pencere aç
 ```
+
+> Hiçbir ek bağımlılık gerekmez: Electron kendi Chromium + Node'lukunu içinde taşır.
+> İndirdiğin `Cat Jam x.x.x.exe`'i istediğin klasöre koy, çift tıkla — çalışır. 🐱
+> (İlk açılışta SmartScreen uyarırsa: *Daha fazla bilgi → Yine de çalıştır* — imza test sertifikasıyla yapılmıştır.)
 
 ### Telefona Kurulum (PWA)
 1. `npm run build` → `dist/` klasörünü statik bir sunucuya koy

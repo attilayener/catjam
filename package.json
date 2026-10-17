@@ -25,7 +25,10 @@
       "electron/**"
     ],
     "win": {
-      "target": "nsis",
+      "target": [
+        "nsis",
+        "portable"
+      ],
       "icon": "public/icons/cat-512.png"
     },
     "nsis": {

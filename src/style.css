@@ -58,6 +58,14 @@ button:active { transform: translateY(0.5px); }
   0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.55); }
   60% { box-shadow: 0 0 0 7px rgba(239, 68, 68, 0); }
 }
+#voiceStatus {
+  position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+  z-index: 1000; display: none;
+  background: var(--panel); border: 1px solid var(--accent); color: var(--text-h);
+  padding: 9px 18px; border-radius: 999px; font-size: 13px;
+  box-shadow: var(--shadow); max-width: min(90vw, 480px); text-align: center;
+}
+#voiceStatus.show { display: block; }
 .iconbtn svg { width: 18px; height: 18px; }
 
 /* Layout */

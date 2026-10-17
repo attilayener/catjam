@@ -6,6 +6,7 @@ import { saveSetting, db } from './db';
 import { t, availableLanguages, getLanguage } from './i18n';
 import { saveImage, loadImages } from './images';
 import { getVaultHandle, ensureVaultPermission, saveImageToVault, uniqueVaultPath, createVaultNote, loadVaultImages } from './vault';
+import { initWhisperLocal, transcribeBlob, whisperReady, whisperSupported } from './voice';
 
 let saveTimer: any = null;
 let propsTimer: any = null;
@@ -14,6 +15,7 @@ let groupByFolder = false;
 let lastViewedId: string | null = null;
 let recentNoteIds: string[] = [];
 let favorites: string[] = [];
+let voiceEngine: 'webspeech' | 'whisper' = 'webspeech';
 try { recentNoteIds = JSON.parse(localStorage.getItem('catjam:recent') || '[]'); } catch { recentNoteIds = []; }
 function markRecent(id: string) {
   recentNoteIds = [id, ...recentNoteIds.filter((x) => x !== id)].slice(0, 12);
@@ -148,6 +150,11 @@ function buildShell() {
   overlay.style.display = 'none';
   app.appendChild(overlay);
 
+  // sesli yazım durum pill'i (alt-orta)
+  const voiceStatus = document.createElement('div');
+  voiceStatus.id = 'voiceStatus';
+  document.body.appendChild(voiceStatus);
+
   bindEvents();
 }
 
@@ -218,60 +225,9 @@ function bindEvents() {
   document.getElementById('btnFocus')!.addEventListener('click', () => document.body.classList.toggle('focus-mode'));
   document.getElementById('exitFocus')!.addEventListener('click', () => document.body.classList.remove('focus-mode'));
   document.getElementById('btnSettings')!.addEventListener('click', () => openSettings());
-  // Sesli yazım (Web Speech API)
-  const voiceBtn = document.getElementById('btnVoice')!;
-  const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-  if (!SR) {
-    voiceBtn.addEventListener('click', () => alert(t('voiceUnsupported')));
-  } else {
-    voiceBtn.addEventListener('click', () => {
-      const vb = voiceBtn as any;
-      if (vb.__listening && vb.__rec) {
-        vb.__want = false;
-        vb.__rec.stop();
-        return;
-      }
-      const rec = new SR();
-      vb.__rec = rec;
-      vb.__want = true;
-      rec.continuous = true;
-      rec.interimResults = true;
-      rec.lang = getLanguage() === 'tr' ? 'tr-TR' : 'en-US';
-      rec.onstart = () => {
-        vb.__listening = true;
-        voiceBtn.classList.add('recording');
-        voiceBtn.textContent = '⏹';
-        voiceBtn.title = t('voiceListening');
-      };
-      rec.onend = () => {
-        vb.__listening = false;
-        if (vb.__want) {
-          // Chrome closes the session after ~1 min; auto restart for truly continuous dictation
-          setTimeout(() => { if (vb.__want) { try { rec.start(); } catch { /* ignore */ } } }, 250);
-        } else {
-          voiceBtn.classList.remove('recording');
-          voiceBtn.textContent = '🎙';
-          voiceBtn.title = t('voiceTyping');
-          const ta = document.getElementById('editorTextarea') as HTMLTextAreaElement | null;
-          ta?.focus();
-        }
-      };
-      rec.onerror = (e: any) => {
-        if (e && e.error === 'not-allowed') {
-          vb.__want = false;
-          alert(t('voiceDeny'));
-        }
-      };
-      rec.onresult = (e: any) => {
-        let finalText = '';
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          if (e.results[i].isFinal) finalText += e.results[i][0].transcript;
-        }
-        if (finalText.trim()) insertAtCursor(finalText.trim() + ' ');
-      };
-      try { rec.start(); } catch { /* already started */ }
-    });
-  }
+  // Sesli yazım: seçili motora göre çalış (bulut Web Speech / yerel Whisper)
+  const voiceBtn = document.getElementById('btnVoice') as HTMLButtonElement;
+  voiceBtn.addEventListener('click', () => onMicClick(voiceBtn));
   document.getElementById('btnStar')!.addEventListener('click', async () => {
     const n = getActiveNote(); if (!n) return;
     favorites = favorites.includes(n.id) ? favorites.filter((x) => x !== n.id) : [n.id, ...favorites];
@@ -422,6 +378,174 @@ function bindEvents() {
   window.addEventListener('keydown', globalKeydown);
 
   // auto create first note if none
+}
+
+// ===== Sesli yazım: motor yönlendirme =====
+let webSpeech: { rec: any; want: boolean } | null = null;
+let whisperState: 'idle' | 'recording' | 'busy' = 'idle';
+let whisperRecorder: any = null;
+let whisperStream: MediaStream | null = null;
+let whisperChunks: Blob[] = [];
+
+function setVoiceStatus(text: string) {
+  const el = document.getElementById('voiceStatus');
+  if (!el) return;
+  if (!text) { el.classList.remove('show'); el.textContent = ''; return; }
+  el.textContent = text;
+  el.classList.add('show');
+}
+
+function onMicClick(btn: HTMLButtonElement) {
+  if (voiceEngine === 'whisper') { void onMicWhisper(btn); }
+  else { onMicWebSpeech(btn); }
+}
+
+function onMicWebSpeech(btn: HTMLButtonElement) {
+  const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+  if (!SR) { alert(t('voiceUnsupported')); return; }
+  if (webSpeech && (webSpeech.rec as any).__active) {
+    webSpeech.want = false;
+    webSpeech.rec.stop();
+    return;
+  }
+  const rec = new SR();
+  webSpeech = { rec, want: true };
+  rec.continuous = true;
+  rec.interimResults = true;
+  rec.lang = getLanguage() === 'tr' ? 'tr-TR' : 'en-US';
+  rec.onstart = () => {
+    (rec as any).__active = true;
+    btn.classList.add('recording');
+    btn.textContent = '⏹';
+    btn.title = t('voiceListening');
+    setVoiceStatus(t('voiceListening'));
+  };
+  rec.onend = () => {
+    (rec as any).__active = false;
+    if (webSpeech?.want) {
+      // Chrome oturumu ~1 dk'da kapatabilir; sürekli dikte için otomatik yeniden başlat
+      setTimeout(() => { if (webSpeech?.want) { try { rec.start(); } catch { /* ignore */ } } }, 250);
+    } else {
+      resetVoiceButton(btn);
+    }
+  };
+  rec.onerror = (e: any) => {
+    if (e && e.error === 'not-allowed') { if (webSpeech) webSpeech.want = false; alert(t('voiceDeny')); }
+  };
+  rec.onresult = (e: any) => {
+    let finalText = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) finalText += e.results[i][0].transcript;
+    }
+    if (finalText.trim()) insertAtCursor(finalText.trim() + ' ');
+  };
+  try { rec.start(); } catch { /* already started */ }
+}
+
+function resetVoiceButton(btn: HTMLButtonElement) {
+  btn.classList.remove('recording');
+  btn.textContent = '🎙';
+  btn.title = t('voiceTyping');
+  setVoiceStatus('');
+}
+
+async function onMicWhisper(btn: HTMLButtonElement) {
+  if (whisperState === 'busy') return;
+  if (whisperState === 'recording') { await stopWhisperTranscribe(btn); return; }
+  await startWhisperRecording(btn);
+}
+
+async function startWhisperRecording(btn: HTMLButtonElement) {
+  if (!whisperSupported() || !navigator.mediaDevices?.getUserMedia) {
+    alert(t('voiceUnsupported'));
+    return;
+  }
+  // Model yoksa önce tek-seferlik indir (internet gerektiğinde uyarır)
+  if (!whisperReady()) {
+    whisperState = 'busy';
+    btn.classList.add('recording');
+    setVoiceStatus(t('voicePreparing'));
+    try {
+      await initWhisperLocal((p) => setVoiceStatus(`${t('voicePreparing')} %${p.percent}`));
+    } catch (err) {
+      console.error('Whisper init failed', err);
+      resetVoiceButton(btn);
+      whisperState = 'idle';
+      alert(t('voiceNeedInternet'));
+      return;
+    }
+  }
+  try {
+    whisperStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch {
+    whisperState = 'idle';
+    resetVoiceButton(btn);
+    alert(t('voiceDeny'));
+    return;
+  }
+  const mimes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'];
+  const mimeType = mimes.find((m) => MediaRecorder.isTypeSupported(m)) || '';
+  try {
+    whisperRecorder = mimeType ? new MediaRecorder(whisperStream!, { mimeType }) : new MediaRecorder(whisperStream!);
+  } catch {
+    whisperState = 'idle';
+    whisperStream!.getTracks().forEach((tk) => tk.stop());
+    resetVoiceButton(btn);
+    alert(t('voiceUnsupported'));
+    return;
+  }
+  whisperChunks = [];
+  whisperRecorder.addEventListener('dataavailable', (e: any) => { if (e.data && e.data.size) whisperChunks.push(e.data); });
+  whisperRecorder.start(1000);
+  whisperState = 'recording';
+  btn.classList.add('recording');
+  btn.textContent = '⏹';
+  btn.title = t('voiceRecording');
+  setVoiceStatus(t('voiceRecording'));
+}
+
+async function stopWhisperTranscribe(btn: HTMLButtonElement) {
+  const rec = whisperRecorder;
+  const stream = whisperStream;
+  whisperState = 'busy';
+  btn.classList.remove('recording');
+  btn.textContent = '⏳';
+  btn.title = t('voiceTranscribing');
+  setVoiceStatus(t('voiceTranscribing'));
+  try {
+    await new Promise<void>((resolve) => { rec.addEventListener('stop', () => resolve(), { once: true }); rec.stop(); });
+  } catch { /* ignore */ }
+  try { stream?.getTracks().forEach((tk) => tk.stop()); } catch { /* ignore */ }
+  try {
+    const blob = new Blob(whisperChunks, { type: rec.mimeType || 'audio/webm' });
+    const text = await transcribeBlob(blob, getLanguage() === 'tr' ? 'tr' : 'en');
+    if (text) insertAtCursor(text + ' ');
+    whisperState = 'idle';
+    resetVoiceButton(btn);
+  } catch (err) {
+    console.error('Transcribe failed', err);
+    whisperState = 'idle';
+    resetVoiceButton(btn);
+    alert(t('voiceNeedInternet'));
+  }
+}
+
+// Ayarlar cepte "modeli şimdi indir" butonu — sadece hazırlar, kayıt başlatmaz
+async function prepareWhisperModel() {
+  if (whisperReady() || whisperState !== 'idle') return;
+  whisperState = 'busy';
+  setVoiceStatus(t('voicePreparing'));
+  try {
+    await initWhisperLocal((p) => setVoiceStatus(`${t('voicePreparing')} %${p.percent}`));
+    setVoiceStatus(`✅ ${t('voiceModelReady')}`);
+    setTimeout(() => setVoiceStatus(''), 1800);
+  } catch (err) {
+    console.error('Whisper init failed', err);
+    setVoiceStatus('');
+    alert(t('voiceNeedInternet'));
+  } finally {
+    whisperState = 'idle';
+  }
 }
 
 function toggleSidebar(open: boolean) {
@@ -991,6 +1115,15 @@ function openSettings() {
       <input type="range" min="12" max="24" value="${getState().settings.fontSize}" id="fontSizeRange" />
       <span id="fontSizeLabel">${getState().settings.fontSize}px</span>
     </div>
+    <div style="margin-bottom:12px;">
+      <div style="font-size:13px;color:var(--text-muted);margin-bottom:6px;">${t('voiceEngine')}</div>
+      <select id="voiceEngineSelect" class="search-input" style="width:100%;">
+        <option value="webspeech">${t('voiceWebSpeech')}</option>
+        <option value="whisper">${t('voiceWhisper')}</option>
+      </select>
+      <div id="voiceEngineHint" style="font-size:11px;color:var(--text-muted);margin-top:6px;line-height:1.5;"></div>
+      <button class="iconbtn" id="whisperPrepare" style="display:none;width:auto;padding:6px 12px;font-size:12px;margin-top:6px;border-color:var(--border);background:var(--bg-soft);">⬇ ${t('voiceDownloadHint')}</button>
+    </div>
     <div style="display:flex;gap:8px;justify-content:flex-end;">
       <button class="iconbtn" id="closeSettings">${t('close')}</button>
     </div>`;
@@ -1038,6 +1171,32 @@ function openSettings() {
   document.documentElement.style.setProperty('--font-size', getState().settings.fontSize + 'px');
   modal.querySelector('#closeSettings')!.addEventListener('click', () => backdrop.remove());
   backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+
+  // Voice engine settings
+  const veSelect = modal.querySelector('#voiceEngineSelect') as HTMLSelectElement;
+  const veHint = modal.querySelector('#voiceEngineHint') as HTMLDivElement;
+  const vePrepare = modal.querySelector('#whisperPrepare') as HTMLButtonElement;
+  const updateVeUi = () => {
+    veSelect.value = voiceEngine;
+    if (voiceEngine === 'whisper') {
+      veHint.textContent = whisperReady()
+        ? `✅ ${t('voiceModelReady')} — ${t('voiceWhisper')}`
+        : t('voiceDownloadHint');
+      vePrepare.style.display = whisperReady() ? 'none' : 'inline-flex';
+    } else {
+      veHint.textContent = t('voiceWebSpeechHint');
+      vePrepare.style.display = 'none';
+    }
+  };
+  updateVeUi();
+  veSelect.addEventListener('change', async () => {
+    voiceEngine = veSelect.value as 'webspeech' | 'whisper';
+    await saveSetting('voiceEngine', voiceEngine);
+    updateVeUi();
+  });
+  vePrepare.addEventListener('click', () => {
+    void prepareWhisperModel().then(() => updateVeUi());
+  });
 }
 
 // Command palette
@@ -1771,6 +1930,10 @@ async function main() {
     const favRow = await db.settings.get('favorites');
     if (favRow && Array.isArray(favRow.value)) favorites = favRow.value.filter((id: string) => getState().notes.some((n) => n.id === id));
   } catch { favorites = []; }
+  try {
+    const veRow = await db.settings.get('voiceEngine');
+    if (veRow && (veRow.value === 'whisper' || veRow.value === 'webspeech')) voiceEngine = veRow.value;
+  } catch { /* default */ }
   // apply settings font size
   document.documentElement.style.setProperty('--font-size', getState().settings.fontSize + 'px');
   if (!getState().notes.length) {

@@ -175,6 +175,7 @@ function buildShell() {
     <div class="sidebar-head">
       <input class="search-input" id="searchInput" placeholder="${t('searchPlaceholder')}" />
       <button class="iconbtn" id="btnGroupFolders" title="Group by folder">📂</button>
+      <button class="iconbtn" id="btnFoldersNew" title="${t('folderNew')}">＋📁</button>
     </div>
     <div class="note-list" id="noteList"></div>
     <div class="sidebar-foot">
@@ -361,6 +362,13 @@ function bindEvents() {
   document.getElementById('btnKanban')!.addEventListener('click', () => openKanbanModal());
   document.getElementById('btnTags')!.addEventListener('click', () => openTagsModal());
   document.getElementById('btnGroupFolders')!.addEventListener('click', () => { groupByFolder = !groupByFolder; renderNoteList(); });
+  document.getElementById('btnFoldersNew')!.addEventListener('click', () => {
+    const name = (prompt(t('folderNew')) || '').trim();
+    if (!name) return;
+    addExtraFolder(name);
+    if (!groupByFolder) groupByFolder = true;
+    renderNoteList();
+  });
   document.getElementById('btnTemplates')!.addEventListener('click', () => openTemplatesModal());
   document.getElementById('btnFocus')!.addEventListener('click', () => document.body.classList.toggle('focus-mode'));
   document.getElementById('exitFocus')!.addEventListener('click', () => document.body.classList.remove('focus-mode'));
@@ -871,6 +879,18 @@ function resolveRoamEmbeds(md: string): string {
 }
 
 
+// ---- 📁 Klasör yardımcıları (boş klasörler de görünür) ----
+function extraFolders(): string[] {
+  try { return JSON.parse(localStorage.getItem('catjam:folders') || '[]'); } catch { return []; }
+}
+function addExtraFolder(f: string) {
+  const cur = extraFolders();
+  if (f && !cur.includes(f)) {
+    cur.push(f);
+    try { localStorage.setItem('catjam:folders', JSON.stringify(cur)); } catch {}
+  }
+}
+
 function renderNoteList() {
   const list = document.getElementById('noteList')!;
   list.innerHTML = '';
@@ -939,6 +959,7 @@ function renderNoteList() {
       const fh = document.createElement('div');
       fh.className = 'folder-header';
       fh.textContent = '⭐ ' + t('favorites');
+      attachFolderDrop(fh, '');
       list.appendChild(fh);
       for (const n of favs) renderOne(n);
       const sep = document.createElement('div');
@@ -951,14 +972,14 @@ function renderNoteList() {
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(n);
     }
+    for (const f of extraFolders()) if (!groups.has(f)) groups.set(f, []);
     const keys = [...groups.keys()].sort((a, b) => String(a).localeCompare(String(b)));
     for (const key of keys) {
-      if (key) {
-        const fh = document.createElement('div');
-        fh.className = 'folder-header';
-        fh.textContent = key;
-        list.appendChild(fh);
-      }
+      const fh = document.createElement('div');
+      fh.className = 'folder-header';
+      fh.textContent = key ? '📁 ' + key : t('folderLabel') + ' —';
+      attachFolderDrop(fh, key);
+      list.appendChild(fh);
       for (const n of groups.get(key)!) renderOne(n);
     }
   } else {
@@ -968,6 +989,24 @@ function renderNoteList() {
 
 function escapeHtml(s: string) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// 📁 klasör başlıklarına not sürükle-bırak taşıma
+function attachFolderDrop(fh: HTMLElement, key: string) {
+  fh.addEventListener('dragover', (e) => { e.preventDefault(); fh.classList.add('drop-ready'); });
+  fh.addEventListener('dragleave', () => fh.classList.remove('drop-ready'));
+  fh.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    fh.classList.remove('drop-ready');
+    const id = e.dataTransfer?.getData('text/plain');
+    if (!id) return;
+    const note = getState().notes.find((x) => x.id === id);
+    if (!note || (note.folder || '') === key) return;
+    if (key && !extraFolders().includes(key)) addExtraFolder(key);
+    await updateNote(id, { folder: key || undefined });
+    renderNoteList();
+  });
 }
 
 // ---- 📊 Kelime istatistik altyapısı (günlük sayaç localStorage'da) ----
@@ -2710,6 +2749,36 @@ function renderProps() {
   if (!n) return;
   const { meta, body } = parseFrontMatter(n.content);
   panel.dataset.body = body;
+  // 📁 klasör satırı (not kaydında folder alanı — front-matter'dan bağımsız)
+  const foldRow = document.createElement('div');
+  foldRow.style.cssText = 'display:flex;gap:6px;align-items:center;margin-bottom:8px;';
+  const foldLabel = document.createElement('span');
+  foldLabel.textContent = '📁 ' + t('folderLabel');
+  foldLabel.style.cssText = 'min-width:120px;color:var(--text-muted);font-size:13px;';
+  const foldInput = document.createElement('input');
+  foldInput.className = 'search-input';
+  foldInput.style.flex = '1';
+  foldInput.value = n.folder || '';
+  foldInput.placeholder = t('folderLabel') + '…';
+  const dl = document.createElement('datalist');
+  dl.id = 'folderDatalist';
+  const names = [...new Set([...extraFolders(), ...getState().notes.map((x) => x.folder || '').filter(Boolean)])].sort();
+  for (const f of names) {
+    const o = document.createElement('option');
+    o.value = f;
+    dl.appendChild(o);
+  }
+  foldInput.setAttribute('list', dl.id);
+  foldInput.addEventListener('change', async () => {
+    const val = foldInput.value.trim();
+    if (val) addExtraFolder(val);
+    await updateNote(n.id, { folder: val || undefined });
+    renderNoteList();
+  });
+  foldRow.appendChild(foldLabel);
+  foldRow.appendChild(foldInput);
+  panel.appendChild(foldRow);
+  panel.appendChild(dl);
   for (const [k, v] of Object.entries(meta)) {
     const row = document.createElement('div');
     row.style.display = 'flex';

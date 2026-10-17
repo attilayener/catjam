@@ -87,8 +87,8 @@ function isEditorLocked(n: any): boolean {
 let saveTimer: any = null;
 let propsTimer: any = null;
 let suggestState: { triggerStart: number; items: { label: string; insert: string }[]; index: number; type: 'wiki' | 'tag' | 'slash' } | null = null;
-let groupByFolder = false;
-let selectedFolder: string | null = null; // tıklanmış klasör odakları (⭐ favoriler için sentinel)
+let groupByFolder = (() => { try { return localStorage.getItem('catjam:groupByFolder') === '1'; } catch { return false; } })();
+let selectedFolder: string | null = (() => { try { const v = localStorage.getItem('catjam:selectedFolder'); return v ? v : null; } catch { return null; } })(); // ⭐ favoriler sentinel'i dahil
 let lastViewedId: string | null = null;
 let recentNoteIds: string[] = [];
 let favorites: string[] = [];
@@ -370,8 +370,7 @@ function bindEvents() {
     if (!name) return;
     addExtraFolder(name);
     if (!groupByFolder) groupByFolder = true;
-    selectedFolder = name; // oluşturulan klasöre odaklan
-    renderNoteList();
+    renderNoteList(); // tüm grup listesi görünür kalır; yeni klasör kendi sırasında
   });
   document.getElementById('btnTemplates')!.addEventListener('click', () => openTemplatesModal());
   document.getElementById('btnFocus')!.addEventListener('click', () => document.body.classList.toggle('focus-mode'));
@@ -877,6 +876,13 @@ function resolveRoamEmbeds(md: string): string {
 
 
 // ---- 📁 Klasör yardımcıları (boş klasörler de görünür) ----
+function saveFolderViewState() {
+  try {
+    localStorage.setItem('catjam:groupByFolder', groupByFolder ? '1' : '0');
+    localStorage.setItem('catjam:selectedFolder', selectedFolder ?? '');
+  } catch { /* no-op */ }
+}
+
 function extraFolders(): string[] {
   try { return JSON.parse(localStorage.getItem('catjam:folders') || '[]'); } catch { return []; }
 }
@@ -889,6 +895,7 @@ function addExtraFolder(f: string) {
 }
 
 function renderNoteList() {
+  saveFolderViewState();
   const list = document.getElementById('noteList')!;
   list.innerHTML = '';
   const notes = filteredNotes();
@@ -896,9 +903,10 @@ function renderNoteList() {
     const h = document.createElement('div'); h.className = 'empty-hint'; h.textContent = getState().search ? t('emptyNoMatch') : t('emptyNoNotes'); list.appendChild(h); return;
   }
   const q = (getState().search || '').trim().toLowerCase();
-  const renderOne = (n: any) => {
+  const renderOne = (n: any, indent = 0) => {
     const item = document.createElement('div');
     item.className = 'note-item' + (n.id === getState().activeId ? ' active' : '');
+    if (indent > 0) item.style.paddingLeft = (10 + indent) + 'px';
     item.draggable = true;
     item.dataset.noteId = n.id;
     const date = new Date(n.updatedAt).toLocaleString();
@@ -975,6 +983,7 @@ function renderNoteList() {
       fh.className = 'folder-header' + (active ? ' selected' : '');
       fh.title = active ? t('folderShowAll') : t('folderOnClick');
       fh.textContent = key === FAV ? '⭐ ' + t('favorites') : (key ? '📁 ' + key : '📄 ' + t('folderRoot'));
+      fh.style.paddingLeft = 8 + indentOf(key) + 'px';
       attachFolderDrop(fh, key === FAV ? '' : key);
       fh.addEventListener('click', () => {
         selectedFolder = selectedFolder === key ? null : key;
@@ -995,7 +1004,7 @@ function renderNoteList() {
       for (const key of keys) {
         if (key !== selectedFolder) continue;
         renderHeader(key);
-        for (const n of groups.get(key)!) renderOne(n);
+        for (const n of groups.get(key)!) renderOne(n, 10 + indentOf(key));
         if (!groups.get(key)!.length) {
           const h = document.createElement('div');
           h.className = 'empty-hint';
@@ -1006,7 +1015,7 @@ function renderNoteList() {
     } else {
       for (const key of keys) {
         renderHeader(key);
-        for (const n of groups.get(key)!) renderOne(n);
+        for (const n of groups.get(key)!) renderOne(n, 10 + indentOf(key));
         if (key === FAV) {
           const sep = document.createElement('div');
           sep.style.height = '6px';
@@ -1017,6 +1026,13 @@ function renderNoteList() {
   } else {
     for (const n of notes) renderOne(n);
   }
+}
+
+// klasör yolunun liste girintisi: 'a' → 0, 'a/b' → 12, 'a/b/c' → 24(px)
+function indentOf(key: string): number {
+  if (!key) return 0;
+  const depth = key.split('/').filter(Boolean).length;
+  return Math.max(0, depth - 1) * 12;
 }
 
 function escapeHtml(s: string) {

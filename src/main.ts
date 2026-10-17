@@ -9,6 +9,7 @@ import { saveImage, loadImages } from './images';
 import { getVaultHandle, ensureVaultPermission, saveImageToVault, uniqueVaultPath, createVaultNote, loadVaultImages } from './vault';
 import { initWhisperLocal, transcribeBlob, whisperReadyFor, whisperCached, whisperSupported, deleteWhisperModel, WHISPER_MODELS as WHISPER_MODEL_META } from './voice';
 import { encryptText, decryptText } from './secure';
+import { startAmbient, stopAmbient, setAmbientVolume, ambientOn } from './ambient';
 
 const LOCKED_PLACEHOLDER = '[🔒 Encrypted — Cat Jam]';
 
@@ -137,6 +138,7 @@ function buildShell() {
     <button class="iconbtn" id="btnTags" title="${t('tags')}">#</button>
     <button class="iconbtn" id="btnTemplates" title="Templates">📋</button>
     <button class="iconbtn" id="btnFocus" title="Focus mode">🎯</button>
+    <button class="iconbtn" id="btnAmbient" title="${t('ambient')}">🎧</button>
     <button class="iconbtn" id="btnSettings" title="${t('settings')}">⚙</button>
   `;
   app.appendChild(tb);
@@ -403,6 +405,7 @@ function bindEvents() {
   document.getElementById('btnFocus')!.addEventListener('click', () => document.body.classList.toggle('focus-mode'));
   document.getElementById('exitFocus')!.addEventListener('click', () => document.body.classList.remove('focus-mode'));
   document.getElementById('btnSettings')!.addEventListener('click', () => openSettings());
+  document.getElementById('btnAmbient')!.addEventListener('click', () => toggleAmbientPopover());
   document.getElementById('btnLock')!.addEventListener('click', () => { void toggleLockButton(); });
   const lockUnlockBtn = document.getElementById('lockUnlock')!;
   lockUnlockBtn.addEventListener('click', () => { void resolveSimpleUnlock(); });
@@ -1050,6 +1053,80 @@ async function openWeeklyReport() {
   const note = await createNote(title);
   await updateNote(note.id, { content: lines.join('\n') });
   renderAll();
+}
+
+// ---- 🎧 Ambiyans sesleri (popover) ----
+function ambientOnKind(): 'rain' | 'waves' | 'fire' | null {
+  return ambientOn();
+}
+let ambientMarker: { kind: 'rain' | 'waves' | 'fire'; volume: number };
+try {
+  ambientMarker = JSON.parse(localStorage.getItem('catjam:ambient') || '');
+} catch {
+  ambientMarker = { kind: 'rain', volume: 40 };
+}
+function ambientPersist() {
+  localStorage.setItem('catjam:ambient', JSON.stringify(ambientMarker));
+}
+
+function toggleAmbientPopover() {
+  const existing = document.getElementById('ambientPopover');
+  if (existing) { existing.remove(); return; }
+  const pop = document.createElement('div');
+  pop.id = 'ambientPopover';
+  const vol = ambientMarker.volume;
+  pop.innerHTML = `
+    <div style="font-size:13px;font-weight:600;color:var(--text-h);margin-bottom:8px;">🎧 ${t('ambient')}</div>
+    <div style="display:flex;gap:6px;margin-bottom:10px;">
+      <button class="iconbtn amb-kind" data-kind="rain" style="flex:1;height:auto;width:auto;padding:7px 4px;font-size:20px;${ambientOnKind() === 'rain' ? 'border-color:var(--accent);color:var(--accent);background:var(--accent-soft);' : ''}" title="${t('ambientRain')}">🌧<div style="font-size:10px;margin-top:2px;">${t('ambientRain')}</div></button>
+      <button class="iconbtn amb-kind" data-kind="waves" style="flex:1;height:auto;width:auto;padding:7px 4px;font-size:20px;${ambientOnKind() === 'waves' ? 'border-color:var(--accent);color:var(--accent);background:var(--accent-soft);' : ''}" title="${t('ambientWaves')}">🌊<div style="font-size:10px;margin-top:2px;">${t('ambientWaves')}</div></button>
+      <button class="iconbtn amb-kind" data-kind="fire" style="flex:1;height:auto;width:auto;padding:7px 4px;font-size:20px;${ambientOnKind() === 'fire' ? 'border-color:var(--accent);color:var(--accent);background:var(--accent-soft);' : ''}" title="${t('ambientFire')}">🔥<div style="font-size:10px;margin-top:2px;">${t('ambientFire')}</div></button>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+      <span style="font-size:12px;color:var(--text-muted);white-space:nowrap;">${t('ambientVolume')}</span>
+      <input type="range" id="ambientVol" min="0" max="100" value="${vol}" style="flex:1;" />
+      <span id="ambientVolLabel" style="font-size:12px;color:var(--text-muted);width:30px;text-align:right;">${vol}</span>
+    </div>
+    <button class="iconbtn" id="ambientStop" style="width:100%;height:auto;padding:7px 10px;font-size:13px;${ambientOnKind() ? '' : 'opacity:.5;'}">⏹ ${t('ambientStop')}</button>
+  `;
+  document.body.appendChild(pop);
+  const stop = pop.querySelector('#ambientStop') as HTMLButtonElement;
+  stop.addEventListener('click', () => { stopAmbient(); pop.remove(); });
+  for (const b of Array.from(pop.querySelectorAll('.amb-kind')) as HTMLButtonElement[]) {
+    b.addEventListener('click', () => {
+      const kind = b.dataset.kind as 'rain' | 'waves' | 'fire';
+      if (ambientMarker.kind === kind && ambientOnKind() === kind) {
+        // aynı tür seçildi → durdur (toggle)
+        stopAmbient();
+        pop.remove();
+        return;
+      }
+      ambientMarker = { ...ambientMarker, kind };
+      ambientPersist();
+      startAmbient(kind, ambientMarker.volume / 100);
+      pop.remove();
+      toggleAmbientPopover(); // yeniden render (renk tazele)
+      catPoke('happy');
+    });
+  }
+  const volInput = pop.querySelector('#ambientVol') as HTMLInputElement;
+  volInput.addEventListener('input', () => {
+    const v = Number(volInput.value);
+    ambientMarker = { ...ambientMarker, volume: v };
+    ambientPersist();
+    (pop.querySelector('#ambientVolLabel') as HTMLSpanElement).textContent = String(v);
+    setAmbientVolume(v / 100);
+  });
+  // dışarı tık → kapat
+  setTimeout(() => {
+    const off = (e: MouseEvent) => {
+      if (!pop.contains(e.target as Node) && !(e.target as HTMLElement).closest('#btnAmbient')) {
+        pop.remove();
+        document.removeEventListener('click', off);
+      }
+    };
+    document.addEventListener('click', off);
+  }, 0);
 }
 
 // ---- Tek dosya HTML paylaşımı ----

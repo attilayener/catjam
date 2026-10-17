@@ -525,6 +525,14 @@ function bindEvents() {
   editorTextarea.addEventListener('paste', async (e) => {
     const cd = (e as ClipboardEvent).clipboardData;
     if (!cd) return;
+    // 📊 Excel/Sheets tablo yapıştırma → markdown tablo
+    const mdT = clipboardToMarkdownTable(cd);
+    if (mdT) {
+      e.preventDefault();
+      insertAtTextarea(editorTextarea, mdT + '\n');
+      showToast('📊 ' + t('pastedTable'));
+      return;
+    }
     const files: File[] = [];
     if (cd.files && cd.files.length) files.push(...Array.from(cd.files));
     if (!files.length && cd.items) {
@@ -1205,6 +1213,41 @@ function renderNoteList() {
 
 function escapeHtml(s: string) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// ---- 📊 Excel/Sheets/Word tablosu → markdown tablo ----
+function clipboardToMarkdownTable(cd: DataTransfer): string | null {
+  const html = cd.getData?.('text/html') || '';
+  if (html && /<table[\s>]/i.test(html)) {
+    try {
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      const rows = Array.from(doc.querySelectorAll('tr')).slice(0, 500);
+      const grid = rows.map((tr) => Array.from(tr.querySelectorAll('th,td')).map((c) => (c.textContent || '').replace(/\s+/g, ' ').replace(/\|/g, '\\|').trim()));
+      const cols = Math.max(...grid.map((r) => r.length));
+      const filled = grid.map((r) => { while (r.length < cols) r.push(''); return r; });
+      if (cols < 1 || filled.length < 2) return null;
+      const mk = (r: string[]) => `| ${r.join(' | ')} |`;
+      return [mk(filled[0]), `| ${Array(cols).fill('---').join(' | ')} |`, ...filled.slice(1).map(mk)].join('\n');
+    } catch { /* düz metne düş */ }
+  }
+  const text = cd.getData?.('text/plain') || '';
+  const lines = text.replace(/\r/g, '').split('\n').filter((l) => l.trim() !== '');
+  if (lines.length >= 2 && lines.every((l) => l.includes('\t'))) {
+    const grid = lines.slice(0, 500).map((l) => l.split('\t').map((c) => c.replace(/\s+/g, ' ').trim().replace(/\|/g, '\\|')));
+    const cols = Math.max(...grid.map((r) => r.length));
+    const filled = grid.map((r) => { while (r.length < cols) r.push(''); return r; });
+    const mk = (r: string[]) => `| ${r.join(' | ')} |`;
+    return [mk(filled[0]), `| ${Array(cols).fill('---').join(' | ')} |`, ...filled.slice(1).map(mk)].join('\n');
+  }
+  return null;
+}
+
+function insertAtTextarea(ta: HTMLTextAreaElement, text: string) {
+  const s = ta.selectionStart;
+  const e = ta.selectionEnd;
+  ta.setRangeText(text, s, e, 'end');
+  ta.focus();
+  ta.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 // 📁 klasör başlıklarına not sürükle-bırak taşıma

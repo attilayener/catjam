@@ -257,6 +257,7 @@ function buildShell() {
       <button class="iconbtn" id="btnDelete" title="${t('deleteNote')}">🗑</button>
       <button class="iconbtn" id="btnProps" title="${t('props')}" style="width:auto;padding:4px 8px;font-size:12px;">${t('props')}</button>
       <button class="iconbtn" id="btnHistory" title="History" style="width:auto;padding:4px 8px;font-size:12px;">History</button>
+      <button class="iconbtn" id="btnSlides" title="${t('slides')}">🎞</button>
     </div>
     <div id="propsPanel" style="display:none;padding:8px 12px;border-bottom:1px solid var(--border);background:var(--panel);"></div>
     <div class="editor-body" id="editorBody">
@@ -469,6 +470,7 @@ function bindEvents() {
     else p.style.display = 'none';
   });
   document.getElementById('btnHistory')!.addEventListener('click', () => openVersionsModal());
+  document.getElementById('btnSlides')!.addEventListener('click', () => openSlides());
   // expose command helper
   (window as any).__addBlockId = () => addBlockIdToCurrentLine();
 
@@ -1647,6 +1649,52 @@ function openMiniCalendarModal() {
     });
   }
   renderMonth();
+}
+
+// ---- 🎞 Slayt modu: `---` ile bölünen sunum ----
+function openSlides() {
+  const n = getActiveNote();
+  if (!n) return;
+  if (isEditorLocked(n)) { showToast('🔒 ' + t('readonlyLock')); return; }
+  const slides = n.content.split(/\n[ \t]*---[ \t]*\n/).map((s) => s.trim()).filter(Boolean);
+  if (!slides.length) { showToast('🎞 ' + t('none')); return; }
+  let idx = 0;
+
+  const ov = document.createElement('div');
+  ov.className = 'slides-overlay';
+  ov.id = 'slidesOverlay';
+  ov.innerHTML = `
+    <div class="slide-stage"><div class="slide-content markdown"></div></div>
+    <div class="slides-bar">
+      <button class="iconbtn" id="slidePrev" title="←">‹</button>
+      <span class="slide-counter" id="slideCounter"></span>
+      <button class="iconbtn" id="slideNext" title="→">›</button>
+      <button class="iconbtn" id="slideClose" title="${t('close')} (Esc)">✕</button>
+    </div>`;
+  document.body.appendChild(ov);
+
+  const stageEl = ov.querySelector('.slide-content') as HTMLDivElement;
+  const counter = ov.querySelector('#slideCounter') as HTMLSpanElement;
+  const show = () => {
+    stageEl.innerHTML = renderMarkdown(slides[idx]);
+    counter.textContent = `${idx + 1} / ${slides.length}`;
+    stageEl.scrollTop = 0;
+  };
+  (ov.querySelector('#slidePrev') as HTMLButtonElement)?.addEventListener('click', () => { if (idx > 0) { idx--; show(); } });
+  (ov.querySelector('#slideNext') as HTMLButtonElement)?.addEventListener('click', () => { if (idx < slides.length - 1) { idx++; show(); } });
+  (ov.querySelector('#slideClose') as HTMLButtonElement)?.addEventListener('click', closeSlides);
+  show();
+
+  function closeSlides() {
+    ov.remove();
+    window.removeEventListener('keydown', keyHandler, true);
+  }
+  function keyHandler(e: KeyboardEvent) {
+    if (e.key === 'Escape') { e.stopPropagation(); closeSlides(); return; }
+    if (e.key === 'ArrowRight' || e.key === 'PageDown') { e.stopPropagation(); if (idx < slides.length - 1) { idx++; show(); } }
+    if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.stopPropagation(); if (idx > 0) { idx--; show(); } }
+  }
+  window.addEventListener('keydown', keyHandler, true);
 }
 
 function openStatsModal() {

@@ -463,6 +463,23 @@ body.focus-mode #catMascot { display: none; }
 .note-item.selected { background: var(--accent-soft); }
 .note-item .sel-cb { margin-right: 6px; accent-color: var(--accent); cursor: pointer; }
 
+/* 🎞 slayt modu */
+.slides-overlay {
+  position: fixed; inset: 0; z-index: 9000;
+  background: var(--bg);
+  display: flex; flex-direction: column;
+}
+.slide-stage { flex: 1; display: flex; align-items: center; justify-content: center; overflow: auto; padding: 46px 60px; }
+.slide-content { max-width: 880px; width: 100%; font-size: 1.18em; }
+.slide-content h1 { font-size: 2.1em; color: var(--text-h); margin: 0.4em 0 0.5em; }
+.slide-content h2 { font-size: 1.6em; color: var(--text-h); margin: 0.7em 0 0.45em; }
+.slide-content img { max-width: 100%; border-radius: 10px; }
+.slides-bar {
+  display: flex; align-items: center; justify-content: center; gap: 14px;
+  padding: 12px; border-top: 1px solid var(--border); background: var(--panel);
+}
+.slide-counter { font-family: var(--mono); font-size: 13px; color: var(--text-muted); min-width: 70px; text-align: center; }
+
 /* 🏷 etiket ağacı */
 .tag-tree-row {
   display: flex; align-items: center; gap: 7px;

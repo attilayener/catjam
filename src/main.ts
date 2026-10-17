@@ -312,6 +312,8 @@ function buildShell() {
     <div id="tagsList"></div>
     <h3 style="margin-top:16px;">${t('unlinkedRefs')}</h3>
     <div id="unlinkedList"></div>
+    <h3 style="margin-top:16px;">🧬 ${t('relatedNotes')}</h3>
+    <div id="relatedList"></div>
   `;
   app.appendChild(side);
 
@@ -2092,6 +2094,8 @@ function renderSidePanel() {
   const outl = document.getElementById('outlineList')!;
   const ul = document.getElementById('unlinkedList')!;
   bl.innerHTML = ''; ol.innerHTML = ''; tl.innerHTML = ''; outl.innerHTML = ''; ul.innerHTML = '';
+  const rl = document.getElementById('relatedList')!;
+  rl.innerHTML = '';
   if (!n) return;
   const links = extractWikiLinks(n.content);
   // outline
@@ -2193,6 +2197,66 @@ function renderSidePanel() {
     ul.appendChild(item);
   }
   if (!unlinked.length) ul.innerHTML = `<div style="color:var(--text-muted);font-size:13px;">${t('none')}</div>`;
+
+  // 🧬 related: yerel benzerlik (kelime kesişimi + ortak etiket + aynı klasör)
+  const related = computeRelatedNotes(n);
+  if (!related.length) {
+    rl.innerHTML = `<div style="color:var(--text-muted);font-size:13px;">${t('none')}</div>`;
+  } else {
+    for (const c of related) {
+      const item = document.createElement('div');
+      item.className = 'backlink-item';
+      item.innerHTML = `<div style="color:var(--text-h);font-weight:500;">${escapeHtml(c.note.title)}</div>` +
+        `<div style="color:var(--text-muted);font-size:11px;margin-top:2px;">${c.why.map((w) => escapeHtml(w)).join(' · ')}</div>`;
+      item.addEventListener('click', () => { setActive(c.note.id); renderAll(); });
+      rl.appendChild(item);
+    }
+  }
+}
+
+// ---- 🧬 İlgili notlar: tamamen yerel benzerlik skoru ----
+const REL_STOP = new Set(['the', 'and', 'with', 'this', 'that', 'from', 'into', 'have', 'just', 'note', 'notes', 'your', 'their', 'bir', 've', 'ile', 'için', 'gibi', 'bunlar', 'şey', 'daha', 'çok', 'dann', 'auch', 'sind', 'avec', 'dans', 'pour', 'esta', 'como']);
+function relTokens(s: string): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const w of s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').split(' ')) {
+    if (w.length < 4 || REL_STOP.has(w)) continue;
+    m.set(w, (m.get(w) ?? 0) + 1);
+  }
+  return m;
+}
+function relNorm(m: Map<string, number>): number {
+  let n = 0;
+  for (const [, c] of m) n += c * c;
+  return Math.sqrt(n) || 1;
+}
+function computeRelatedNotes(n: any): { note: any; why: string[]; score: number }[] {
+  const myTokens = relTokens(n.title + ' ' + n.title + ' ' + n.content.slice(0, 1200));
+  const myNorm = relNorm(myTokens);
+  const myTags = new Set(extractTags(n.content));
+  const myLinks = new Set(extractWikiLinks(n.content));
+  const out: { note: any; why: string[]; score: number }[] = [];
+  for (const peer of getState().notes) {
+    if (peer.id === n.id || peer.deletedAt || peer.locked) continue;
+    let score = 0;
+    const why: string[] = [];
+    // kelime kesişimi (cosine-benzeri normalize)
+    const pt = relTokens(peer.title + ' ' + peer.content.slice(0, 1200));
+    let inter = 0;
+    for (const [w, c] of myTokens) inter += c * (pt.get(w) ?? 0);
+    const overlap = inter / (myNorm * relNorm(pt));
+    if (overlap > 0.03) { score += overlap * 4; why.push('✍️'); }
+    // ortak etiket
+    const peerTags = new Set(extractTags(peer.content));
+    const sharedT = [...myTags].filter((x) => peerTags.has(x));
+    if (sharedT.length) { score += sharedT.length * 1.5; why.push(' #' + sharedT[0]); }
+    // bağlantı sinyalleri
+    if ([...myLinks].some((l) => l === peer.title)) { score += 2.5; why.push('🔗'); }
+    if (peer.content.includes('[[' + n.title + ']]')) { score += 2.5; if (!why.includes('🔗')) why.push('🔗'); }
+    // klasör komşuluğu
+    if (n.folder && n.folder === peer.folder) { score += 0.8; why.push('📁'); }
+    if (score >= 2) out.push({ note: peer, why: why.slice(0, 3), score: Math.round(score * 100) / 100 });
+  }
+  return out.sort((a, b) => b.score - a.score).slice(0, 4);
 }
 
 function renderAll() {

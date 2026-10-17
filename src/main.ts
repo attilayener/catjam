@@ -125,7 +125,7 @@ function buildShell() {
   side.id = 'sidePanel';
   side.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-      <h3 style="margin:0;">${t('backlinksTitle')}</h3>
+      <h3 style="margin-top:0;">${t('backlinksTitle')}</h3>
       <button class="iconbtn" id="closeSidePanel" title="${t('close')}">✕</button>
     </div>
     <div id="backlinksList"></div>

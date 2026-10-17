@@ -2,11 +2,19 @@
   "name": "Cat Jam Notes",
   "short_name": "Cat Jam",
   "description": "Minimalist markdown notebook (Obsidian-style)",
+  "id": "/",
   "start_url": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
+  "lang": "tr",
+  "categories": ["productivity"],
   "background_color": "#111214",
   "theme_color": "#111214",
   "icons": [
-    { "src": "/vite.svg", "sizes": "any", "type": "image/svg+xml" }
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icons/cat-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/cat-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/cat-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }

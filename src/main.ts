@@ -2897,3 +2897,10 @@ main().catch((err) => {
   console.error(err);
   app.innerHTML = `<pre style="color:red;padding:20px;">${err?.stack || err}</pre>`;
 });
+
+// PWA service worker (yalnız üretim derlemesinde)
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => { /* sessizce yoksay */ });
+  });
+}

@@ -74,6 +74,7 @@ async function resolveSimpleUnlock() {
     unlockedSet.add(n.id);
     (n as any).content = plain; // yalnız bellek: DB hâlâ şifreli placeholder
     renderAll();
+    scheduleRelock(n.id);
     showToast('🔓 ' + t('unlockBtn') + ' — ' + t('readonlyLock'));
   } catch {
     if (err) err.textContent = t('wrongPass');
@@ -82,6 +83,23 @@ async function resolveSimpleUnlock() {
 
 function isEditorLocked(n: any): boolean {
   return noteLocked(n) && !unlockedSet.has(n.id);
+}
+
+// ---- ⏲ Şifreli not: 10 dk işlem yoksa otomatik tekrar kilitle ----
+const relockTimers = new Map<string, any>();
+const RELOCK_MS = 10 * 60 * 1000;
+function autoRelock(id: string) {
+  relockTimers.delete(id);
+  if (!unlockedSet.has(id)) return;
+  const n = getActiveNote();
+  unlockedSet.delete(id);
+  if (n && n.id === id) (n as any).content = LOCKED_PLACEHOLDER; // bellekteki düz metni gizle
+  renderAll();
+  showToast('🔒 ' + t('autoRelocked'));
+}
+function scheduleRelock(id: string) {
+  clearTimeout(relockTimers.get(id));
+  relockTimers.set(id, setTimeout(() => autoRelock(id), RELOCK_MS));
 }
 
 let saveTimer: any = null;
@@ -2032,6 +2050,7 @@ function pipeEditorInput(text: string) {
   clearTimeout(saveTimer);
   const beforeWords = countWords(n.content);
   const noteId = n.id;
+  if (unlockedSet.has(noteId)) scheduleRelock(noteId); // yazmaya devam ediyorsun: geri sayım yenilenir
   saveTimer = setTimeout(async () => {
     await updateNote(noteId, { content: text });
     catKeywordReaction(text);

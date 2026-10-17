@@ -50,7 +50,7 @@ export async function initStore() {
   all.sort((a, b) => (a.order ?? a.createdAt ?? 0) - (b.order ?? b.createdAt ?? 0));
   state.notes = all;
   state.ready = true;
-  if (all.length) state.activeId = all[0].id;
+  state.activeId = all.find((n) => !n.deletedAt)?.id ?? null;
   emit();
 }
 
@@ -92,6 +92,16 @@ export async function createNote(title?: string): Promise<Note> {
 export async function updateNote(id: string, patch: Partial<Note>) {
   const idx = state.notes.findIndex((n) => n.id === id);
   if (idx < 0) return;
+  // kilitli (E2EE) nota düz içerik yazımı engellenir; yalnız kilitleme işlemi (lockData+content) geçebilir
+  const current = state.notes[idx];
+  if (
+    current.locked &&
+    patch.content !== undefined &&
+    patch.locked === undefined &&
+    patch.lockData === undefined
+  ) {
+    return;
+  }
   const updated = { ...state.notes[idx], ...patch, updatedAt: Date.now() };
   state.notes[idx] = updated;
   state.notes.sort((a, b) => (a.order ?? a.createdAt ?? 0) - (b.order ?? b.createdAt ?? 0));
@@ -193,7 +203,7 @@ export async function openVault(): Promise<boolean> {
     await importVault(handle); await loadVaultImages(handle);
     const all = await db.notes.toArray(); all.sort((a,b)=>(a.order??a.createdAt??0)-(b.order??b.createdAt??0));
     state.notes = all;
-    if (all.length) state.activeId = all[0].id;
+    state.activeId = all.find((n) => !n.deletedAt)?.id ?? null;
     emit();
     return true;
   }
@@ -203,7 +213,7 @@ export async function openVault(): Promise<boolean> {
   await importVault(handle); await loadVaultImages(handle);
   const all = await db.notes.toArray(); all.sort((a,b)=>(a.order??a.createdAt??0)-(b.order??b.createdAt??0));
   state.notes = all;
-  if (all.length) state.activeId = all[0].id;
+  state.activeId = all.find((n) => !n.deletedAt)?.id ?? null;
   emit();
   return true;
 }

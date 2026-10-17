@@ -1343,12 +1343,16 @@ function renderEditor() {
     lockBtn.title = noteLocked(n) ? (unlocked ? t('relock') : t('unlockBtn')) : t('lockNote');
   }
   if (lockedNow) {
+    lockCard.style.display = '';
+    editorPane.style.display = 'none';
+    previewPaneEl.style.display = 'none';
     const hint = document.getElementById('lockHint')!;
     hint.textContent = n.lockData?.hint ? '💡 ' + n.lockData.hint : t('lockedPlaceholder');
     titleInput.value = n.title;
     titleInput.readOnly = true;
     textarea.value = '';
     textarea.readOnly = true;
+    setTimeout(() => { const lp = document.getElementById('lockPass') as HTMLInputElement | null; if (lp && document.activeElement !== lp) lp.focus(); }, 60);
     return;
   }
   lockCard.style.display = 'none';
@@ -1868,7 +1872,7 @@ function openCommandPalette() {
       candidateNotes.sort((a, b) => b.score - a.score);
       candidateNotes = candidateNotes.map((x) => x.n).slice(0, 12);
     } else {
-      const recent = recentNoteIds.map((id) => getState().notes.find((n) => n.id === id)).filter(Boolean) as any[];
+      const recent = recentNoteIds.map((id) => getState().notes.find((n) => n.id === id && !n.deletedAt)).filter(Boolean) as any[];
       const rest = getState().notes.filter((n) => !recentNoteIds.includes(n.id)).slice(0, 12 - recent.length);
       candidateNotes = [...recent, ...rest].slice(0, 12);
     }

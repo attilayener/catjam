@@ -175,6 +175,7 @@ function catSvgHtml(): string {
       <path class="cat-joy" d="M17.2 17.2 Q19.6 14.8 22 17.2" fill="none" stroke="var(--cat-line)" stroke-width="1.1" stroke-linecap="round"/>
       <path class="cat-joy" d="M24 17.2 Q26.4 14.8 28.8 17.2" fill="none" stroke="var(--cat-line)" stroke-width="1.1" stroke-linecap="round"/>
       <path d="M21.6 20 L24.4 20 L23 22.2 Z" fill="var(--cat-inner)"/>
+      <path class="cat-smile" d="M20.6 23.2 Q23 25.6 25.4 23.2" fill="none" stroke="var(--cat-line)" stroke-width="1" stroke-linecap="round"/>
       <g stroke="var(--cat-line)" stroke-width="0.9" opacity="0.7">
         <line x1="13.5" y1="18.5" x2="7.5" y2="16.5"/>
         <line x1="13.5" y1="20.5" x2="7.5" y2="22.5"/>
@@ -209,9 +210,15 @@ export function mountCat() {
   applyAccessories();
   updateMood();
 
-  // --- tıklama: quip + miyav
+  // --- tıklama: uyandır / quip + miyav
   cat.addEventListener('click', () => {
     interact();
+    if (cat.classList.contains('mood-sleep')) {
+      awakeOverride = Date.now(); // 5 dk uyanık kalsın
+      updateMood();
+      say(isTr() ? 'Miyav?! Rüya görmüşüm… 😴' : 'Meow?! Just dreaming… 😴');
+      return;
+    }
     meow();
     say(quip(isTr() ? QUIPS_TR : QUIPS_EN));
     poke('wiggle');
@@ -320,18 +327,22 @@ function applyPupils() {
 }
 
 // --- ruh hâli
+let awakeOverride = 0; // tıkla-uyandır süresi (ms timestamp)
 export function updateMood() {
   const root = document.getElementById('catMascot');
   if (!root) return;
   const now = Date.now();
   const hour = new Date().getHours();
+  const last = Number(store('catjam:lastsave') || '0');
   let mood: 'sleep' | 'happy' | 'lazy' | 'neutral' = 'neutral';
-  if (pomoRunning() || hour >= 23 || hour < 7) mood = 'sleep';
-  else {
-    const last = Number(store('catjam:lastsave') || '0');
-    if (last && now - last < 180000) mood = 'happy';
-    else if (last && now - last > 12 * 3600000) mood = 'lazy';
-  }
+  if (pomoRunning()) mood = 'sleep';
+  else if (
+    (hour >= 23 || hour < 7) &&
+    now - awakeOverride > 5 * 60000 &&      // az önce uyandırılmadıysa
+    (!last || now - last > 10 * 60000)      // son 10 dk'da yazmadıysa
+  ) mood = 'sleep';
+  else if (last && now - last < 180000) mood = 'happy';
+  else if (last && now - last > 12 * 3600000) mood = 'lazy';
   setMood(mood);
 }
 function setMood(m: 'sleep' | 'happy' | 'lazy' | 'neutral') {
@@ -339,6 +350,10 @@ function setMood(m: 'sleep' | 'happy' | 'lazy' | 'neutral') {
   if (!root) return;
   root.classList.remove('mood-sleep', 'mood-happy', 'mood-lazy');
   if (m !== 'neutral') root.classList.add('mood-' + m);
+  // mutlu = genişlemiş bebek gözler (açık!) — CSS scale yerine r niteliği (takip translate'i ile çakışmaz)
+  root.querySelectorAll<SVGCircleElement>('.cat-pupil').forEach((p) => {
+    p.setAttribute('r', m === 'happy' ? '1.95' : '1.25');
+  });
 }
 
 // --- kelime tepkileri (autosave sonrası main çağırır)

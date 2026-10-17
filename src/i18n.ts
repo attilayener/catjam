@@ -109,6 +109,8 @@ const dict: Record<Lang, Record<string, string>> = {
     'catOn': 'Cat on',
     'catOff': 'Cat off',
     'catPhrasesHint': 'Custom line replaces default chatter. Use "{name}" for the cat name. Separate with ; or new lines.',
+    'hoverMissing': 'Note not found — click to create it',
+    'hoverLocked': 'Encrypted — content stays hidden',
     'catSound': 'Cat sounds',
     'catSkins': 'Cat color',
     'catLevel': 'Level',
@@ -281,6 +283,8 @@ const dict: Record<Lang, Record<string, string>> = {
     'catOn': 'Kedi açık',
     'catOff': 'Kedi kapalı',
     'catPhrasesHint': 'Cümle yazarsan boşta konuşmaların yerine geçer. "{name}" kedinin adıyla değişir. ; ya da satır geçişiyle ayır.',
+    'hoverMissing': 'Not bulunamadı — oluşturmak için tıkla',
+    'hoverLocked': 'Şifreli — içerik gizli kalır',
     'catSound': 'Kedi sesleri',
     'catSkins': 'Kedi rengi',
     'catLevel': 'Seviye',
@@ -516,6 +520,8 @@ const dict: Record<Lang, Record<string, string>> = {
     'catPhrases': 'Sprechblasen (Idle-Geplapper)',
     'catPhrasesPh': 'Miau! ; Schnurr… ; eine Zeile je Spruch',
     'catPhrasesHint': 'Eigene Zeilen ersetzen das Idle-Geplapper. „{name}" wird durch den Katzennamen ersetzt. Trennen mit ; oder Zeilenumbruch.',
+    'hoverMissing': 'Notiz nicht gefunden — zum Erstellen klicken',
+    'hoverLocked': 'Verschlüsselt — Inhalt bleibt verborgen',
   },
   fr: {
     'brand': 'Cat Jam',
@@ -688,6 +694,8 @@ const dict: Record<Lang, Record<string, string>> = {
     'catPhrases': 'Bulles de parole (bavardages)',
     'catPhrasesPh': 'Miaou ! ; Ronron… ; une ligne par phrase',
     'catPhrasesHint': 'Une ligne personnalisée remplace le babil par défaut. « {name} » est remplacé par le nom du chat. Sépare par ; ou retour à la ligne.',
+    'hoverMissing': 'Note introuvable — clique pour la créer',
+    'hoverLocked': 'Chiffrée — le contenu reste masqué',
   },
 };
 

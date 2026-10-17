@@ -532,6 +532,20 @@ function bindEvents() {
     const target = decodeURIComponent(a.getAttribute('data-wiki') || '');
     openWikiTarget(target);
   });
+  // 🔍 hover önizleme: wiki linkin üstünde bekle → not kartı
+  document.getElementById('previewContent')!.addEventListener('mouseover', (e) => {
+    const a = (e.target as HTMLElement).closest('a.wiki-link') as HTMLAnchorElement | null;
+    if (!a) return;
+    clearTimeout(hoverTimer);
+    hoverTimer = setTimeout(() => showHoverCard(a, decodeURIComponent(a.getAttribute('data-wiki') || a.textContent || '')), 320);
+  });
+  document.getElementById('previewContent')!.addEventListener('mouseout', (e) => {
+    const a = (e.target as HTMLElement).closest('a.wiki-link');
+    if (!a) return;
+    clearTimeout(hoverTimer);
+    hideHoverCard();
+  });
+  document.getElementById('previewContent')!.addEventListener('scroll', hideHoverCard, true);
 
   document.getElementById('graphBack')!.addEventListener('click', () => showEditor());
   document.getElementById('graphFit')!.addEventListener('click', () => fitGraph());
@@ -753,6 +767,49 @@ function openWikiTarget(target: string) {
       updateNote(note.id, { content: `# ${name}\n` }).then(() => renderAll());
     });
   }
+}
+
+// ---- 🔍 Bağlantı hover önizleme kartı ----
+let hoverCard: HTMLElement | null = null;
+let hoverTimer: any = null;
+
+function hideHoverCard() {
+  clearTimeout(hoverTimer);
+  hoverTimer = null;
+  if (hoverCard) { hoverCard.remove(); hoverCard = null; }
+}
+
+function showHoverCard(target: HTMLElement, wikiTarget: string) {
+  const noteTitle = wikiTarget.split('#')[0].trim();
+  if (!noteTitle) return;
+  hideHoverCard();
+  const card = document.createElement('div');
+  card.className = 'link-preview';
+  const note = findNoteByTitle(noteTitle);
+  if (!note) {
+    card.innerHTML = `<div class="lp-title">📄 ${escapeHtml(noteTitle)}</div><div class="lp-missing">✨ ${t('hoverMissing')}</div>`;
+  } else if (note.locked) {
+    card.innerHTML = `<div class="lp-title">🔒 ${escapeHtml(note.title)}</div><div class="lp-missing">${t('hoverLocked')}</div>`;
+  } else {
+    // ~900 karakterlik önizlemeyi markdown olarak bas
+    const chunk = note.content.slice(0, 900);
+    card.innerHTML = `<div class="lp-title">📄 ${escapeHtml(note.title)}</div><div class="lp-body">${renderMarkdown(chunk)}</div>`;
+  }
+  document.body.appendChild(card);
+  const r = target.getBoundingClientRect();
+  const cw = Math.min(360, window.innerWidth - 24);
+  let x = Math.max(12, Math.min(r.left, window.innerWidth - cw - 12));
+  let y = r.bottom + 8;
+  card.style.left = x + 'px';
+  card.style.top = y + 'px';
+  requestAnimationFrame(() => {
+    if (!card.isConnected) return;
+    const ch = card.offsetHeight;
+    if (r.bottom + ch + 20 > window.innerHeight) y = Math.max(12, r.top - ch - 8);
+    card.style.top = y + 'px';
+    card.classList.add('show');
+  });
+  hoverCard = card;
 }
 
 function updateReadingTime(content: string) {
@@ -1436,6 +1493,26 @@ ul, ol { padding-left: 1.5em; }
 .checklist-item { list-style: none; margin-left: -1.2em; }
 input[type="checkbox"] { margin-right: 6px; }
 .wiki-link { color: #0f6b5f; text-decoration: none; border-bottom: 1px dotted #0f6b5f99; }
+
+/* 🔍 hover önizleme kartı */
+.link-preview {
+  position: fixed; z-index: 9999;
+  width: min(360px, calc(100vw - 24px));
+  max-height: 300px; overflow: auto;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 12px; padding: 12px 14px;
+  box-shadow: 0 12px 32px rgba(0,0,0,.35);
+  opacity: 0; transform: translateY(4px);
+  transition: opacity .15s ease, transform .15s ease;
+  pointer-events: none;
+}
+.link-preview.show { opacity: 1; transform: none; }
+.link-preview .lp-title { font-weight: 700; font-size: 13.5px; margin-bottom: 6px; color: var(--text-h); }
+.link-preview .lp-body { font-size: 13px; line-height: 1.55; color: var(--text); word-break: break-word; }
+.link-preview .lp-body h1, .link-preview .lp-body h2, .link-preview .lp-body h3, .link-preview .lp-body h4 { font-size: 1.05em; margin: 8px 0 4px; }
+.link-preview .lp-body p { margin: 4px 0; }
+.link-preview .lp-body ul, .link-preview .lp-body ol { margin: 4px 0; padding-left: 18px; }
+.link-preview .lp-missing { color: var(--text-muted); font-size: 12px; font-style: italic; }
 .callout { border-radius: 10px; padding: 12px 16px; margin: 1em 0; background: #f2efe9; border-left: 4px solid #8a857c; }
 .callout-title { font-weight: 700; margin-bottom: 4px; font-size: 0.95em; }
 .callout-note { background: #eef4fa; border-left-color: #3b82c4; } .callout-tip { background: #ecf8f1; border-left-color: #2e9e63; }

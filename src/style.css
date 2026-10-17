@@ -451,7 +451,17 @@ body.focus-mode #catMascot { display: none; }
   border-radius: 10px; box-shadow: 0 24px 64px rgba(0,0,0,.6);
 }
 
-/* 🏠 Ana panel */
+/* 🌊 aktivite akışı modalı */
+.aff-row { display: grid; grid-template-columns: 92px 1fr 52px 40px; align-items: center; gap: 10px; padding: 5px 2px; border-bottom: 1px solid var(--border); font-size: 12.5px; }
+.aff-row:last-child { border-bottom: none; }
+.aff-date { color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.aff-bar { height: 8px; background: var(--bg-soft); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.aff-bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-soft)); border-radius: 6px; }
+.aff-bar i.hit { background: linear-gradient(90deg, #34d399, #a7f3d0); }
+.aff-num { font-family: var(--mono); color: var(--text-h); text-align: right; white-space: nowrap; }
+.aff-notes { font-family: var(--mono); color: var(--text-muted); text-align: right; }
+
+/* 🖼 lightbox */
 .dash-wrap { padding: 18px 22px 30px; overflow: auto; }
 .dash-hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
 .dash-date { font-size: 12.5px; color: var(--text-muted); letter-spacing: .3px; }

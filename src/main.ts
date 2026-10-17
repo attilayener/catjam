@@ -228,6 +228,7 @@ function buildShell() {
           <button class="iconbtn" id="btnPdf" title="${t('exportPdf')}">📄 PDF</button>
           <button class="iconbtn" id="btnWeekly" title="${t('weeklyReport')}">📊 ${t('weeklyReport')}</button>
           <button class="iconbtn" id="btnStats" title="${t('statsTitle')}">📈 ${t('statsTitle')}</button>
+          <button class="iconbtn" id="btnActivityFlow" title="${t('actFlow')}">🌊 ${t('actFlow')}</button>
           <button class="iconbtn" id="btnTrash" title="${t('trash')}">🗑 ${t('trash')}</button>
         </div>
       </div>
@@ -410,6 +411,7 @@ function bindEvents() {
   document.getElementById('btnPdf')!.addEventListener('click', () => { void exportCurrentNotePdf(); });
   document.getElementById('btnWeekly')!.addEventListener('click', () => { void openWeeklyReport(); });
   document.getElementById('btnStats')!.addEventListener('click', () => openStatsModal());
+  document.getElementById('btnActivityFlow')!.addEventListener('click', () => openActivityFlowModal());
   document.getElementById('btnBacklinks')!.addEventListener('click', () => toggleSidePanel());
   document.getElementById('closeSidePanel')!.addEventListener('click', () => toggleSidePanel());
   document.getElementById('btnGraph')!.addEventListener('click', () => showGraph());
@@ -1464,6 +1466,47 @@ function toggleAmbientPopover() {
 }
 
 // ---- 📊 İstatistik panosu ----
+// ---- 🌊 30 günlük aktivite akışı ----
+function openActivityFlowModal() {
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop';
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.style.maxWidth = '560px';
+  modal.innerHTML = `
+    <h3>🌊 ${t('actFlow')}</h3>
+    <div id="affList" style="max-height:60vh;overflow:auto;"></div>
+    <div style="text-align:right;margin-top:10px;">
+      <button class="iconbtn" id="affClose" style="width:auto;height:auto;padding:6px 14px;">${t('close')}</button>
+    </div>`;
+  backdrop.appendChild(modal);
+  document.body.appendChild(backdrop);
+  (modal.querySelector('#affClose') as HTMLButtonElement).addEventListener('click', () => backdrop.remove());
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+
+  const dw = dayWords();
+  const goal = dailyGoal();
+  const today = new Date();
+  const notes = getState().notes.filter((n) => !n.deletedAt);
+  const rows: string[] = [];
+  for (let d = 0; d < 30; d++) {
+    const day = new Date(today);
+    day.setDate(today.getDate() - d);
+    const key = isoDayKey(day);
+    const words = dw[key] || 0;
+    const pct = Math.min(100, Math.round((words / goal) * 100));
+    const touched = notes.filter((n) => { const u = n.updatedAt ? new Date(n.updatedAt) : null; return u ? isoDayKey(u) === key : false; }).length;
+    const label = d === 0 ? t('statsToday') : day.toLocaleDateString(dashLang(), { day: 'numeric', month: 'short' });
+    rows.push(`<div class="aff-row">
+      <div class="aff-date">${label}${d === 0 ? ' ✦' : ''}</div>
+      <div class="aff-bar"><i style="width:${pct}%"${words >= goal ? ' class="hit"' : ''}></i></div>
+      <div class="aff-num" title="${t('statsGoal')}: ${goal}">${words}${words >= goal ? ' 🎯' : ''}</div>
+      <div class="aff-notes" title="${t('statsNotes')}">✎${touched}</div>
+    </div>`);
+  }
+  (modal.querySelector('#affList') as HTMLDivElement).innerHTML = rows.join('');
+}
+
 function openStatsModal() {
   const backdrop = document.createElement('div');
   backdrop.className = 'modal-backdrop';

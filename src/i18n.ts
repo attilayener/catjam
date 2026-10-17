@@ -72,6 +72,12 @@ const dict: Record<Lang, Record<string, string>> = {
     'voiceRecording': 'Recording… click to stop',
     'voiceTranscribing': 'Transcribing locally…',
     'voiceNeedInternet': 'No connection and the local model is not downloaded yet. Connect once and click the mic again.',
+    'voiceModel': 'Model quality',
+    'voiceModelTiny': 'Tiny (~75 MB — fastest)',
+    'voiceModelBase': 'Base (~100 MB)',
+    'voiceModelSmall': 'Small (~370 MB — best quality)',
+    'voiceModelSwitched': 'Model switched. Directories: switching models re-downloads once.',
+    'voiceSmallRec': 'Recommended for Turkish: Small — more accurate, slower transcription.',
   },
   tr: {
     'brand': 'Cat Jam',
@@ -144,6 +150,12 @@ const dict: Record<Lang, Record<string, string>> = {
     'voiceRecording': 'Kayıt… durdurmak için tıkla',
     'voiceTranscribing': 'Yerel olarak çözümleniyor…',
     'voiceNeedInternet': 'İnternet yok ve yerel model henüz indirilmemiş. İnternete bağlanıp mikrofona tekrar bas.',
+    'voiceModel': 'Model kalitesi',
+    'voiceModelTiny': 'Tiny (~75 MB — en hızlı)',
+    'voiceModelBase': 'Base (~100 MB)',
+    'voiceModelSmall': 'Small (~370 MB — en kaliteli)',
+    'voiceModelSwitched': 'Model değiştirildi. Yeni model bir kez daha indirilir (eski model önbellekte kalır).',
+    'voiceSmallRec': 'Türkçe için önerilen: Small — daha doğru, çözümleme biraz daha yavaş.',
   },
 };
 

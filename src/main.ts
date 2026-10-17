@@ -6,7 +6,7 @@ import { saveSetting, db } from './db';
 import { t, availableLanguages, getLanguage } from './i18n';
 import { saveImage, loadImages } from './images';
 import { getVaultHandle, ensureVaultPermission, saveImageToVault, uniqueVaultPath, createVaultNote, loadVaultImages } from './vault';
-import { initWhisperLocal, transcribeBlob, whisperReady, whisperSupported } from './voice';
+import { initWhisperLocal, transcribeBlob, whisperReady, whisperReadyFor, whisperSupported, WHISPER_MODELS as WHISPER_MODEL_META } from './voice';
 
 let saveTimer: any = null;
 let propsTimer: any = null;
@@ -16,6 +16,7 @@ let lastViewedId: string | null = null;
 let recentNoteIds: string[] = [];
 let favorites: string[] = [];
 let voiceEngine: 'webspeech' | 'whisper' = 'webspeech';
+let whisperModelKey: 'tiny' | 'base' | 'small' = 'base';
 try { recentNoteIds = JSON.parse(localStorage.getItem('catjam:recent') || '[]'); } catch { recentNoteIds = []; }
 function markRecent(id: string) {
   recentNoteIds = [id, ...recentNoteIds.filter((x) => x !== id)].slice(0, 12);
@@ -460,13 +461,13 @@ async function startWhisperRecording(btn: HTMLButtonElement) {
     alert(t('voiceUnsupported'));
     return;
   }
-  // Model yoksa önce tek-seferlik indir (internet gerektiğinde uyarır)
-  if (!whisperReady()) {
+  // Model yoksa /_farklı kalite seçiliyse_ önce tek-seferlik indir (internet gerektiğinde uyarır)
+  if (!whisperReadyFor(whisperModelKey)) {
     whisperState = 'busy';
     btn.classList.add('recording');
     setVoiceStatus(t('voicePreparing'));
     try {
-      await initWhisperLocal((p) => setVoiceStatus(`${t('voicePreparing')} %${p.percent}`));
+      await initWhisperLocal((p) => setVoiceStatus(`${t('voicePreparing')} %${p.percent}`), whisperModelKey);
     } catch (err) {
       console.error('Whisper init failed', err);
       resetVoiceButton(btn);
@@ -530,13 +531,13 @@ async function stopWhisperTranscribe(btn: HTMLButtonElement) {
   }
 }
 
-// Ayarlar cepte "modeli şimdi indir" butonu — sadece hazırlar, kayıt başlatmaz
+// Ayarlar içinde "modeli şimdi indir" butonu — sadece hazırlar, kayıt başlatmaz
 async function prepareWhisperModel() {
-  if (whisperReady() || whisperState !== 'idle') return;
+  if (whisperReadyFor(whisperModelKey) || whisperState !== 'idle') return;
   whisperState = 'busy';
   setVoiceStatus(t('voicePreparing'));
   try {
-    await initWhisperLocal((p) => setVoiceStatus(`${t('voicePreparing')} %${p.percent}`));
+    await initWhisperLocal((p) => setVoiceStatus(`${t('voicePreparing')} %${p.percent}`), whisperModelKey);
     setVoiceStatus(`✅ ${t('voiceModelReady')}`);
     setTimeout(() => setVoiceStatus(''), 1800);
   } catch (err) {
@@ -1123,6 +1124,15 @@ function openSettings() {
       </select>
       <div id="voiceEngineHint" style="font-size:11px;color:var(--text-muted);margin-top:6px;line-height:1.5;"></div>
       <button class="iconbtn" id="whisperPrepare" style="display:none;width:auto;padding:6px 12px;font-size:12px;margin-top:6px;border-color:var(--border);background:var(--bg-soft);">⬇ ${t('voiceDownloadHint')}</button>
+      <div id="voiceModelWrap" style="display:none;margin-top:10px;">
+        <div style="font-size:13px;color:var(--text-muted);margin-bottom:6px;">${t('voiceModel')}</div>
+        <select id="whisperModelSelect" class="search-input" style="width:100%;">
+          <option value="tiny">${t('voiceModelTiny')}</option>
+          <option value="base">${t('voiceModelBase')}</option>
+          <option value="small">${t('voiceModelSmall')}</option>
+        </select>
+        <div id="voiceModelHint" style="font-size:11px;color:var(--text-muted);margin-top:6px;line-height:1.5;">${t('voiceSmallRec')}</div>
+      </div>
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end;">
       <button class="iconbtn" id="closeSettings">${t('close')}</button>
@@ -1176,16 +1186,22 @@ function openSettings() {
   const veSelect = modal.querySelector('#voiceEngineSelect') as HTMLSelectElement;
   const veHint = modal.querySelector('#voiceEngineHint') as HTMLDivElement;
   const vePrepare = modal.querySelector('#whisperPrepare') as HTMLButtonElement;
+  const veModelWrap = modal.querySelector('#voiceModelWrap') as HTMLDivElement;
+  const veModelSelect = modal.querySelector('#whisperModelSelect') as HTMLSelectElement;
+  const veModelHint = modal.querySelector('#voiceModelHint') as HTMLDivElement;
   const updateVeUi = () => {
     veSelect.value = voiceEngine;
+    veHint.textContent = voiceEngine === 'whisper' ? t('voiceDownloadHint') : t('voiceWebSpeechHint');
     if (voiceEngine === 'whisper') {
-      veHint.textContent = whisperReady()
-        ? `✅ ${t('voiceModelReady')} — ${t('voiceWhisper')}`
-        : t('voiceDownloadHint');
-      vePrepare.style.display = whisperReady() ? 'none' : 'inline-flex';
+      veModelWrap.style.display = '';
+      veModelSelect.value = whisperModelKey;
+      veModelHint.textContent = whisperReady()
+        ? `✅ ${t('voiceModelReady')} (${WHISPER_MODEL_META[whisperModelKey]?.id}) — ${WHISPER_MODEL_META[whisperModelKey]?.size} MB`
+        : `${t('voiceSmallRec')} — Yeni model seçiminde (${WHISPER_MODEL_META[whisperModelKey]?.size} MB) bir kez indirilir.`;
+      const ready = whisperReady();
+      vePrepare.style.display = ready ? 'none' : 'inline-flex';
     } else {
-      veHint.textContent = t('voiceWebSpeechHint');
-      vePrepare.style.display = 'none';
+      veModelWrap.style.display = 'none';
     }
   };
   updateVeUi();
@@ -1196,6 +1212,16 @@ function openSettings() {
   });
   vePrepare.addEventListener('click', () => {
     void prepareWhisperModel().then(() => updateVeUi());
+  });
+  veModelSelect.addEventListener('change', async () => {
+    const key = veModelSelect.value as 'tiny' | 'base' | 'small';
+    if (key === whisperModelKey) return;
+    if (whisperState === 'busy') { veModelSelect.value = whisperModelKey; return; }
+    const ok = confirm(`${t('voiceModelSwitched')} (${WHISPER_MODEL_META[key]?.size} MB)`);
+    if (!ok) { veModelSelect.value = whisperModelKey; return; }
+    whisperModelKey = key;
+    await saveSetting('whisperModel', key);
+    prepareWhisperModel().then(() => updateVeUi());
   });
 }
 
@@ -1933,6 +1959,10 @@ async function main() {
   try {
     const veRow = await db.settings.get('voiceEngine');
     if (veRow && (veRow.value === 'whisper' || veRow.value === 'webspeech')) voiceEngine = veRow.value;
+  } catch { /* default */ }
+  try {
+    const wmRow = await db.settings.get('whisperModel');
+    if (wmRow && WHISPER_MODEL_META[wmRow.value]) whisperModelKey = wmRow.value;
   } catch { /* default */ }
   // apply settings font size
   document.documentElement.style.setProperty('--font-size', getState().settings.fontSize + 'px');

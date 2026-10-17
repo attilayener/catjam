@@ -8,8 +8,17 @@ let audioCtxRef: AudioContext | null = null;
 
 export type VoiceProgress = { percent: number; label?: string };
 
-// Model dosyaları: Xenova/whisper-base (quantized ≈ 90-100 MB, base kalitesi fp16 ggml'ye yakın)
-const MODEL_ID = 'Xenova/whisper-base';
+// Model dosyaları (transformers.js quantized ONNX): kalite/boyut seçilebilir
+export const WHISPER_MODELS: Record<string, { id: string; size: number }> = {
+  tiny: { id: 'Xenova/whisper-tiny', size: 75 },
+  base: { id: 'Xenova/whisper-base', size: 100 },
+  small: { id: 'Xenova/whisper-small', size: 370 },
+};
+let currentModelKey = 'base';
+
+export function whisperModel(): string {
+  return currentModelKey;
+}
 
 export function whisperSupported(): boolean {
   return typeof (window as any).MediaRecorder !== 'undefined';
@@ -17,6 +26,10 @@ export function whisperSupported(): boolean {
 
 export function whisperReady(): boolean {
   return transcriber !== null;
+}
+
+export function whisperReadyFor(modelKey: string): boolean {
+  return transcriber !== null && currentModelKey === modelKey;
 }
 
 function tryLocalWasmPaths(env: any) {
@@ -31,7 +44,13 @@ function tryLocalWasmPaths(env: any) {
 }
 
 // Dosya bazlı progress'i yüzdeye çevir
-export function initWhisperLocal(onProgress?: (p: VoiceProgress) => void): Promise<any> {
+export function initWhisperLocal(onProgress?: (p: VoiceProgress) => void, modelKey?: string): Promise<any> {
+  if (modelKey && modelKey !== currentModelKey) {
+    // model değişimi: paketi kapat, yeni modelle kur
+    transcriber = null;
+    initPromise = null;
+    currentModelKey = modelKey;
+  }
   if (transcriber) return Promise.resolve(transcriber);
   if (initPromise) return initPromise;
   initPromise = (async () => {
@@ -45,7 +64,8 @@ export function initWhisperLocal(onProgress?: (p: VoiceProgress) => void): Promi
       const pct = vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
       onProgress?.({ percent: pct });
     };
-    transcriber = await TF.pipeline('automatic-speech-recognition', MODEL_ID, {
+    const modelId = WHISPER_MODELS[currentModelKey]?.id ?? WHISPER_MODELS.base.id;
+    transcriber = await TF.pipeline('automatic-speech-recognition', modelId, {
       quantized: true,
       progress_callback: (p: any) => {
         if (p.status === 'progress' && p.file) {
@@ -57,7 +77,7 @@ export function initWhisperLocal(onProgress?: (p: VoiceProgress) => void): Promi
       },
     });
     onProgress?.({ percent: 100 });
-    try { localStorage.setItem('catjam:whisperReady', '1'); } catch { /* no-op */ }
+    try { localStorage.setItem('catjam:whisperReady:' + currentModelKey, '1'); } catch { /* no-op */ }
     return transcriber;
   })();
   initPromise.catch(() => { initPromise = null; });

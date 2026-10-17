@@ -8,6 +8,7 @@ import { saveSetting, db } from './db';
 import { t, availableLanguages, getLanguage } from './i18n';
 import { saveImage, loadImages } from './images';
 import { getVaultHandle, ensureVaultPermission, saveImageToVault, uniqueVaultPath, createVaultNote, loadVaultImages } from './vault';
+import { mountCM } from './cm';
 import { initWhisperLocal, transcribeBlob, whisperReadyFor, whisperCached, whisperSupported, deleteWhisperModel, WHISPER_MODELS as WHISPER_MODEL_META } from './voice';
 import { encryptText, decryptText } from './secure';
 import { startAmbient, stopAmbient, setAmbientVolume, ambientOn } from './ambient';
@@ -217,6 +218,7 @@ function buildShell() {
     <div class="editor-body" id="editorBody">
       <div class="editor-pane" id="editorPane" style="position:relative;">
         <textarea class="editor-textarea" id="editorTextarea" placeholder="${t('editorPlaceholder')}"></textarea>
+        <div id="editorCm" style="position:absolute;inset:0;display:none;"></div>
         <div id="suggestBox" class="suggest-box" style="display:none;"></div>
       </div>
       <div class="preview-pane" id="previewPane">
@@ -424,22 +426,7 @@ function bindEvents() {
   });
 
   const editorTextarea = document.getElementById('editorTextarea') as HTMLTextAreaElement;
-  editorTextarea.addEventListener('input', () => {
-    const n = getActiveNote(); if (!n) return;
-    if (editorTextarea.readOnly) return; // kilitli not: DB'ye plaintext yazılmaz
-    clearTimeout(saveTimer);
-    const beforeWords = countWords(n.content);
-    const noteId = n.id;
-    saveTimer = setTimeout(async () => {
-      await updateNote(noteId, { content: editorTextarea.value });
-      catKeywordReaction(editorTextarea.value);
-      const delta = countWords(editorTextarea.value) - beforeWords;
-      if (delta > 0) trackDailyWords(delta);
-      maybeCelebrateGoal();
-    }, 500);
-    updatePreview(editorTextarea.value);
-    updateSuggestions();
-  });
+  editorTextarea.addEventListener('input', () => pipeEditorInput(editorTextarea.value));
   editorTextarea.addEventListener('keyup', updateSuggestions);
   editorTextarea.addEventListener('click', updateSuggestions);
   editorTextarea.addEventListener('keydown', (e) => {
@@ -1548,6 +1535,8 @@ function renderEditor() {
   if (!n) {
     titleInput.value = '';
     textarea.value = '';
+    const cm0 = document.getElementById('editorCm');
+    if (cm0) cm0.style.display = 'none';
     document.getElementById('previewContent')!.innerHTML = '';
     lockCard.style.display = 'none'; editorPane.style.display = ''; previewPaneEl.style.display = '';
     return;
@@ -1577,6 +1566,7 @@ function renderEditor() {
   textarea.readOnly = !!noteLocked(n);
   titleInput.value = n.title;
   textarea.value = n.content;
+  syncCM(n.content); // cm aktifse değeri oraya da it; geçirgenlik: sayfa yeniden yüklenmeden önce
   const star = document.getElementById('btnStar') as HTMLButtonElement | null;
   if (star) {
     const isFav = favorites.includes(n.id);
@@ -1584,6 +1574,7 @@ function renderEditor() {
     star.classList.toggle('active', isFav);
   }
   updatePreview(n.content);
+  syncEditorKind(n);
   // mode
   const mode = getState().settings.editorMode;
   document.querySelectorAll('#modeToggle button').forEach((b) => b.classList.toggle('active', (b as HTMLElement).dataset.mode === mode));
@@ -1763,6 +1754,84 @@ function closeTab(id: string) {
 
 function saveTabs() {
   try { localStorage.setItem('catjam:tabs', JSON.stringify(openTabIds)); } catch {}
+}
+
+// ---- ✍️ CM6 editörü (Live Preview-lite; flag: catjam:cm) ----
+let cmHandle: any = null; // CMHandle
+let cmSupported = true;
+
+function editorWantsCM(note: any): boolean {
+  return localStorage.getItem('catjam:cm') === '1' && !!note && !note.locked;
+}
+
+function syncCM(content: string) {
+  if (cmHandle) cmHandle.setValue(content);
+}
+
+function syncMirrorCursor() {
+  if (!cmHandle) return;
+  const ta = document.getElementById('editorTextarea') as HTMLTextAreaElement | null;
+  if (!ta) return;
+  const c = cmHandle.getCursor();
+  try { ta.selectionStart = c.from; ta.selectionEnd = c.to; } catch { /* no-op */ }
+}
+
+function syncEditorKind(n: any) {
+  const ta = document.getElementById('editorTextarea') as HTMLTextAreaElement | null;
+  const host = document.getElementById('editorCm') as HTMLElement | null;
+  if (!ta || !host || !cmSupported) return;
+  const useCM = editorWantsCM(n);
+  if (useCM && !cmHandle) {
+    try {
+      cmHandle = mountCM(host, ta.value, (text: string) => {
+        const t2 = document.getElementById('editorTextarea') as HTMLTextAreaElement | null;
+        if (t2 && t2.value !== text) t2.value = text; // sessiz ayna
+        pipeEditorInput(text);
+      }, () => {
+        syncMirrorCursor();
+        updateEditorStatus();
+      });
+      cmHandle.view.contentDOM.addEventListener('keydown', (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          const fb = document.getElementById('fmtBar');
+          if (fb && fb.classList.contains('show')) fb.classList.remove('show');
+        }
+      });
+      cmHandle.view.contentDOM.addEventListener('blur', () => {
+        setTimeout(hideSuggestions, 200);
+        setTimeout(updateFmtBarVisibility, 220);
+      });
+    } catch {
+      cmSupported = false;
+    }
+  }
+  host.style.display = useCM && cmHandle && cmSupported ? '' : 'none';
+  ta.style.visibility = useCM && cmHandle && cmSupported ? 'hidden' : '';
+}
+
+function toggleCmEditor() {
+  const cur = localStorage.getItem('catjam:cm') === '1';
+  localStorage.setItem('catjam:cm', cur ? '0' : '1');
+  if (cur && cmHandle) { /* geri dönüşte mirror korunur */ }
+  renderAll();
+}
+
+function pipeEditorInput(text: string) {
+  const n = getActiveNote(); if (!n) return;
+  const ta = document.getElementById('editorTextarea') as HTMLTextAreaElement | null;
+  if (ta && ta.readOnly) return; // kilitli not: DB'ye plaintext yazılmaz
+  clearTimeout(saveTimer);
+  const beforeWords = countWords(n.content);
+  const noteId = n.id;
+  saveTimer = setTimeout(async () => {
+    await updateNote(noteId, { content: text });
+    catKeywordReaction(text);
+    const delta = countWords(text) - beforeWords;
+    if (delta > 0) trackDailyWords(delta);
+    maybeCelebrateGoal();
+  }, 500);
+  updatePreview(text);
+  if (!cmHandle) updateSuggestions(); // CM modunda [[ ]] önerisi Phase B
 }
 
 function showGraph(local = false) {
@@ -2163,6 +2232,10 @@ function openCommandPalette() {
       { label: t('modeSplit'), hint: '', action: () => { setEditorMode('split'); applyMode('split'); } },
       { label: 'Add block reference ID', hint: '', action: () => addBlockIdToCurrentLine() },
       { label: t('exportPdf'), hint: '', action: () => { void exportCurrentNotePdf(); } },
+      {
+        label: localStorage.getItem('catjam:cm') === '1' ? 'Taş editöre dön (textarea)' : '✍️ CM6 Live Preview (beta)',
+        hint: '', action: () => toggleCmEditor(),
+      },
     ].filter((c) => c.label.toLowerCase().includes(f));
     let candidateNotes: any[] = getState().notes;
     if (f) {
@@ -2738,6 +2811,7 @@ function updatePropsContent(meta: Record<string, any>, body: string) {
   panel.dataset.body = body;
   const ta = document.getElementById('editorTextarea') as HTMLTextAreaElement;
   if (ta && document.activeElement !== ta) ta.value = content;
+  if (cmHandle) cmHandle.setValue(content); // cm'e de yansıt
   clearTimeout(propsTimer);
   propsTimer = setTimeout(() => updateNote(n.id, { content }), 300);
 }

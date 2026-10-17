@@ -389,6 +389,14 @@ body.focus-mode #catMascot { display: none; }
 .note-item.drag-over { outline: 2px dashed var(--accent); outline-offset: -2px; }
 .folder-header { padding: 6px 8px 2px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); font-weight: 600; }
 .folder-header.drop-ready { outline: 1px dashed var(--accent); outline-offset: -1px; color: var(--accent); background: var(--accent-soft); border-radius: 6px; }
+
+/* ✍️ CM6 Live Preview dekorları */
+.cm-md-h1 { font-size: 1.65em; font-weight: 700; color: var(--text-h); }
+.cm-md-h2 { font-size: 1.42em; font-weight: 700; color: var(--text-h); }
+.cm-md-h3 { font-size: 1.2em; font-weight: 700; color: var(--text-h); }
+.cm-md-h4, .cm-md-h5, .cm-md-h6 { font-weight: 700; color: var(--text-h); }
+.cm-md-quote { color: var(--text-muted); font-style: italic; border-left: 3px solid var(--border); padding-left: 6px; }
+#editorCm .cm-editor { height: 100%; }
 .note-item mark { background: var(--accent-soft); color: var(--text-h); border-radius: 2px; padding: 0 1px; }
 .note-item .snippet { line-height: 1.4; color: var(--text-muted); }
 .callout { border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 6px; padding: 8px 10px; margin: 0.8em 0; background: var(--panel); }

@@ -35,6 +35,36 @@ function emit() {
   for (const l of listeners) l();
 }
 
+// ---- 📡 Çoklu sekme senkronu (BroadcastChannel) ----
+// Yazan sekme mesaj yollar; alan sekme veritabanından yeniden yükler (yazmaWho? guard: mesaj geri gönderilmez)
+const _bc: BroadcastChannel | null = (() => {
+  try { return typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('catjam-sync') : null; } catch { return null; }
+})();
+function broadcastSync() {
+  try { _bc?.postMessage('sync'); } catch { /* yoksay */ }
+}
+const SYNC_DEBOUNCE_MS = 400;
+let _syncTimer: any = null;
+if (_bc) {
+  _bc.onmessage = () => {
+    clearTimeout(_syncTimer);
+    _syncTimer = setTimeout(() => {
+      void (async () => {
+        try {
+          const all = await db.notes.toArray();
+          all.sort((a, b) => (a.order ?? a.createdAt ?? 0) - (b.order ?? b.createdAt ?? 0));
+          state.notes = all;
+          if (state.activeId && !all.some((n) => n.id === state.activeId)) {
+            state.activeId = all.find((n) => !n.deletedAt)?.id ?? null;
+          }
+          await loadImages();
+          emit();
+        } catch (e) { console.warn('sync reload', e); }
+      })();
+    }, SYNC_DEBOUNCE_MS);
+  };
+}
+
 export async function initStore() {
   state.settings = await loadSettings();
   applyTheme(state.settings.theme);
@@ -86,6 +116,7 @@ export async function createNote(title?: string): Promise<Note> {
   state.notes.sort((a, b) => (a.order ?? a.createdAt ?? 0) - (b.order ?? b.createdAt ?? 0));
   state.activeId = note.id;
   emit();
+  broadcastSync();
   return note;
 }
 
@@ -115,6 +146,7 @@ export async function updateNote(id: string, patch: Partial<Note>) {
     }
   } catch (e) { /* ignore */ }
   emit();
+  broadcastSync();
 }
 
 export async function deleteNote(id: string, permanent = false) {
@@ -127,6 +159,7 @@ export async function deleteNote(id: string, permanent = false) {
       state.activeId = state.notes.find((x) => !x.deletedAt)?.id ?? state.notes[0]?.id ?? null;
     }
     emit();
+    broadcastSync();
     return;
   }
   // softened: çöpe at (restore edilebilir)
@@ -139,6 +172,7 @@ export async function deleteNote(id: string, permanent = false) {
   }
   await db.notes.put(updated);
   emit();
+  broadcastSync();
 }
 
 export async function restoreNote(id: string) {
@@ -150,6 +184,7 @@ export async function restoreNote(id: string) {
   state.activeId = id;
   await db.notes.put(updated);
   emit();
+  broadcastSync();
 }
 
 export function deletedNotes(): Note[] {

@@ -6,7 +6,7 @@ import { saveSetting, db } from './db';
 import { t, availableLanguages, getLanguage } from './i18n';
 import { saveImage, loadImages } from './images';
 import { getVaultHandle, ensureVaultPermission, saveImageToVault, uniqueVaultPath, createVaultNote, loadVaultImages } from './vault';
-import { initWhisperLocal, transcribeBlob, whisperReady, whisperReadyFor, whisperSupported, WHISPER_MODELS as WHISPER_MODEL_META } from './voice';
+import { initWhisperLocal, transcribeBlob, whisperReadyFor, whisperCached, whisperSupported, deleteWhisperModel, WHISPER_MODELS as WHISPER_MODEL_META } from './voice';
 
 let saveTimer: any = null;
 let propsTimer: any = null;
@@ -1132,6 +1132,7 @@ function openSettings() {
           <option value="small">${t('voiceModelSmall')}</option>
         </select>
         <div id="voiceModelHint" style="font-size:11px;color:var(--text-muted);margin-top:6px;line-height:1.5;">${t('voiceSmallRec')}</div>
+        <button class="iconbtn" id="whisperDeleteBtn" style="width:auto;padding:5px 12px;font-size:12px;margin-top:8px;border-color:var(--border);background:var(--bg-soft);color:var(--text);">🗑 ${t('voiceDeleteModel')}</button>
       </div>
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end;">
@@ -1195,11 +1196,14 @@ function openSettings() {
     if (voiceEngine === 'whisper') {
       veModelWrap.style.display = '';
       veModelSelect.value = whisperModelKey;
-      veModelHint.textContent = whisperReady()
-        ? `✅ ${t('voiceModelReady')} (${WHISPER_MODEL_META[whisperModelKey]?.id}) — ${WHISPER_MODEL_META[whisperModelKey]?.size} MB`
-        : `${t('voiceSmallRec')} — Yeni model seçiminde (${WHISPER_MODEL_META[whisperModelKey]?.size} MB) bir kez indirilir.`;
-      const ready = whisperReady();
-      vePrepare.style.display = ready ? 'none' : 'inline-flex';
+      const meta = WHISPER_MODEL_META[whisperModelKey];
+      const cached = whisperCached(whisperModelKey);
+      veModelHint.textContent = whisperReadyFor(whisperModelKey)
+        ? `✅ ${t('voiceModelReady')} (${meta?.id}) — ${meta?.size} MB`
+        : cached
+          ? `💾 ${t('voiceModelReady')} (önbellekte) — tekrar yüklemek için 🎙'e bas`
+          : `${t('voiceSmallRec')} — ${meta?.size} MB ${t('voiceNotCached')}, seçince bir kez indirilir.`;
+      vePrepare.style.display = whisperCached(whisperModelKey) ? 'none' : 'inline-flex';
     } else {
       veModelWrap.style.display = 'none';
     }
@@ -1212,6 +1216,16 @@ function openSettings() {
   });
   vePrepare.addEventListener('click', () => {
     void prepareWhisperModel().then(() => updateVeUi());
+  });
+  const veDelete = modal.querySelector('#whisperDeleteBtn') as HTMLButtonElement;
+  veDelete.addEventListener('click', async () => {
+    if (whisperState !== 'idle') return;
+    if (!confirm(t('voiceDeleteConfirm'))) return;
+    await deleteWhisperModel(whisperModelKey);
+    veModelHint.textContent = `🗑 ${t('voiceDeleted')} (${WHISPER_MODEL_META[whisperModelKey]?.size} MB)`;
+    vePrepare.style.display = 'inline-flex';
+    setVoiceStatus(`🗑 ${t('voiceDeleted')}`);
+    setTimeout(() => setVoiceStatus(''), 1800);
   });
   veModelSelect.addEventListener('change', async () => {
     const key = veModelSelect.value as 'tiny' | 'base' | 'small';

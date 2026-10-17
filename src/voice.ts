@@ -20,6 +20,37 @@ export function whisperModel(): string {
   return currentModelKey;
 }
 
+// Kayıtlı model disk alanını temizle: HTTPS Cache API ('transformers-cache') içinden
+// seçilenin (veya hepsinin) dosyalarını atar; transcriber'ı da kapatır.
+export async function deleteWhisperModel(modelKey?: string): Promise<void> {
+  transcriber = null;
+  initPromise = null;
+  try { await audioCtxRef?.close(); } catch { /* ignore */ }
+  audioCtxRef = null;
+  try {
+    if (modelKey) localStorage.removeItem('catjam:whisperReady:' + modelKey);
+    else Object.keys(WHISPER_MODELS).forEach((k) => localStorage.removeItem('catjam:whisperReady:' + k));
+  } catch { /* ignore */ }
+  try {
+    if (typeof caches === 'undefined') return;
+    const cache = await caches.open('transformers-cache');
+    const keys = await cache.keys();
+    const ids = modelKey ? [WHISPER_MODELS[modelKey]?.id] : Object.values(WHISPER_MODELS).map((m) => m.id);
+    for (const req of keys) {
+      const url = req.url;
+      if (ids.some((id) => id && url.includes(id)) || (!modelKey && url.includes('whisper-'))) {
+        await cache.delete(req);
+      }
+    }
+  } catch (e) {
+    console.warn('Whisper cache delete failed', e);
+  }
+}
+
+export function whisperCached(modelKey: string): boolean {
+  try { return localStorage.getItem('catjam:whisperReady:' + modelKey) === '1'; } catch { return false; }
+}
+
 export function whisperSupported(): boolean {
   return typeof (window as any).MediaRecorder !== 'undefined';
 }

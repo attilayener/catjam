@@ -78,6 +78,10 @@ const dict: Record<Lang, Record<string, string>> = {
     'voiceModelSmall': 'Small (~370 MB — best quality)',
     'voiceModelSwitched': 'Model switched. Directories: switching models re-downloads once.',
     'voiceSmallRec': 'Recommended for Turkish: Small — more accurate, slower transcription.',
+    'voiceDeleteModel': 'Delete selected model from device',
+    'voiceDeleteConfirm': 'Delete this model from device storage? It will be re-downloaded on next use.',
+    'voiceDeleted': 'Model deleted from device. It will be re-downloaded on next use.',
+    'voiceNotCached': 'Not downloaded yet',
   },
   tr: {
     'brand': 'Cat Jam',
@@ -156,6 +160,10 @@ const dict: Record<Lang, Record<string, string>> = {
     'voiceModelSmall': 'Small (~370 MB — en kaliteli)',
     'voiceModelSwitched': 'Model değiştirildi. Yeni model bir kez daha indirilir (eski model önbellekte kalır).',
     'voiceSmallRec': 'Türkçe için önerilen: Small — daha doğru, çözümleme biraz daha yavaş.',
+    'voiceDeleteModel': 'Seçili modeli cihazdan sil',
+    'voiceDeleteConfirm': 'Model cihazdan silinsin mi? (Bir daha kullanmak istersen yeniden indirilir)',
+    'voiceDeleted': 'Model cihazdan silindi. Tekrar kullanmak isteyince yeniden indirilir.',
+    'voiceNotCached': 'Henüz indirilmedi',
   },
 };
 

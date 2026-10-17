@@ -87,8 +87,8 @@ function isEditorLocked(n: any): boolean {
 let saveTimer: any = null;
 let propsTimer: any = null;
 let suggestState: { triggerStart: number; items: { label: string; insert: string }[]; index: number; type: 'wiki' | 'tag' | 'slash' } | null = null;
-let groupByFolder = (() => { try { return localStorage.getItem('catjam:groupByFolder') === '1'; } catch { return false; } })();
-let selectedFolder: string | null = (() => { try { const v = localStorage.getItem('catjam:selectedFolder'); return v ? v : null; } catch { return null; } })(); // ⭐ favoriler sentinel'i dahil
+let groupByFolder = (() => { try { return localStorage.getItem('catjam:groupByFolder') !== '0'; } catch { return true; } })(); // varsayılan: ağaç
+let selectedFolder: string | null = (() => { try { const v = localStorage.getItem('catjam:selectedFolder'); return v && v !== '⭐' ? v : null; } catch { return null; } })(); // ＋Yeni notun hedef klasörü
 let lastViewedId: string | null = null;
 let recentNoteIds: string[] = [];
 let favorites: string[] = [];
@@ -176,7 +176,7 @@ function buildShell() {
   sidebar.innerHTML = `
     <div class="sidebar-head">
       <input class="search-input" id="searchInput" placeholder="${t('searchPlaceholder')}" />
-      <button class="iconbtn" id="btnGroupFolders" title="Group by folder">📂</button>
+      <button class="iconbtn" id="btnGroupFolders" title="${t('treeBtn')}">🌳</button>
       <button class="iconbtn" id="btnFoldersNew" title="${t('folderNew')}">＋📁</button>
     </div>
     <div class="note-list" id="noteList"></div>
@@ -883,6 +883,13 @@ function saveFolderViewState() {
   } catch { /* no-op */ }
 }
 
+function expandedMap(): Record<string, boolean> {
+  try { return JSON.parse(localStorage.getItem('catjam:exp') || '{}'); } catch { return {}; }
+}
+function saveExpandedMap(m: Record<string, boolean>) {
+  try { localStorage.setItem('catjam:exp', JSON.stringify(m)); } catch { /* no-op */ }
+}
+
 function extraFolders(): string[] {
   try { return JSON.parse(localStorage.getItem('catjam:folders') || '[]'); } catch { return []; }
 }
@@ -903,7 +910,7 @@ function renderNoteList() {
     const h = document.createElement('div'); h.className = 'empty-hint'; h.textContent = getState().search ? t('emptyNoMatch') : t('emptyNoNotes'); list.appendChild(h); return;
   }
   const q = (getState().search || '').trim().toLowerCase();
-  const renderOne = (n: any, indent = 0) => {
+  const renderOne = (n: any, indent = 0, opts?: { compact?: boolean; allowReorder?: boolean }) => {
     const item = document.createElement('div');
     item.className = 'note-item' + (n.id === getState().activeId ? ' active' : '');
     if (indent > 0) item.style.paddingLeft = (10 + indent) + 'px';
@@ -922,7 +929,9 @@ function renderNoteList() {
         snippetHtml = `<div class="meta snippet">${(start > 0 ? '...' : '') + hl + (end < haystack.length ? '...' : '')}</div>`;
       }
     }
-    item.innerHTML = `<div class="title">${escapeHtml(n.title)}</div>${snippetHtml || `<div class="meta">${date}</div>`}
+    item.innerHTML = opts?.compact
+      ? `<div class="title">${escapeHtml(n.title)}${n.locked ? ' 🔒' : ''}</div><button class="note-del" title="${t('deleteNote')}" aria-label="${t('deleteNote')}">✕</button>`
+      : `<div class="title">${escapeHtml(n.title)}${n.locked ? ' 🔒' : ''}</div>${snippetHtml || `<div class="meta">${date}</div>`}
       <button class="note-del" title="${t('deleteNote')}" aria-label="${t('deleteNote')}">✕</button>`;
     item.addEventListener('click', (e) => {
       const btn = (e.target as HTMLElement).closest('.note-del'); if (btn) return;
@@ -942,97 +951,113 @@ function renderNoteList() {
       item.classList.add('dragging');
     });
     item.addEventListener('dragend', () => item.classList.remove('dragging'));
-    item.addEventListener('dragover', (e) => { e.preventDefault(); item.classList.add('drag-over'); });
-    item.addEventListener('dragleave', () => item.classList.remove('drag-over'));
-    item.addEventListener('drop', async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      item.classList.remove('drag-over');
-      const fromId = e.dataTransfer?.getData('text/plain');
-      const toId = n.id;
-      if (fromId && fromId !== toId) {
-        await reorderNotes(fromId, toId);
-        renderAll();
-      }
-    });
+    if (opts?.allowReorder !== false) {
+      item.addEventListener('dragover', (e) => { e.preventDefault(); item.classList.add('drag-over'); });
+      item.addEventListener('dragleave', () => item.classList.remove('drag-over'));
+      item.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        item.classList.remove('drag-over');
+        const fromId = e.dataTransfer?.getData('text/plain');
+        const toId = n.id;
+        if (fromId && fromId !== toId) {
+          await reorderNotes(fromId, toId);
+          renderAll();
+        }
+      });
+    }
     list.appendChild(item);
   };
 
-  if (groupByFolder) {
-    const favs = favorites.map((id) => getState().notes.find((n) => n.id === id)).filter(Boolean) as any[];
-    const FAV = '⭐'; // favoriler grubu için sentinel (gerçek klasör adlarıyla çakışmaz)
-    const groups = new Map<string, any[]>();
-    if (favs.length && !q) groups.set(FAV, favs.slice());
-    for (const n of notes) {
-      const key = n.folder || '';
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key)!.push(n);
-    }
-    for (const f of extraFolders()) if (!groups.has(f)) groups.set(f, []);
-    if (selectedFolder !== null && selectedFolder !== FAV && !groups.has(selectedFolder)) groups.set(selectedFolder, []);
-    if (selectedFolder !== null && !groups.has(selectedFolder)) selectedFolder = null;
-    const keys = [...groups.keys()].sort((a, b) => {
-      if (a === FAV) return -1;
-      if (b === FAV) return 1;
-      return String(a).localeCompare(String(b));
-    });
+  if (q) {
+    for (const n of notes) renderOne(n);
+    return;
+  }
 
-    const renderHeader = (key: string) => {
-      const active = selectedFolder === key;
-      const fh = document.createElement('div');
-      fh.className = 'folder-header' + (active ? ' selected' : '');
-      fh.title = active ? t('folderShowAll') : t('folderOnClick');
-      fh.textContent = key === FAV ? '⭐ ' + t('favorites') : (key ? '📁 ' + key : '📄 ' + t('folderRoot'));
-      fh.style.paddingLeft = 8 + indentOf(key) + 'px';
-      attachFolderDrop(fh, key === FAV ? '' : key);
-      fh.addEventListener('click', () => {
-        selectedFolder = selectedFolder === key ? null : key;
+  if (groupByFolder) {
+    const exp = expandedMap();
+    const favs = favorites.map((id) => getState().notes.find((n) => n.id === id)).filter(Boolean) as any[];
+    // ⭐ Favoriler bölümü (katlanabilir)
+    if (favs.length) {
+      const favOpen = exp['⭐'] !== false;
+      const sh = document.createElement('div');
+      sh.className = 'tree-row section';
+      sh.style.paddingLeft = '8px';
+      sh.innerHTML = `<span class="tree-chevron${favOpen ? ' open' : ''}">▸</span><span class="tree-icon">⭐</span><span class="tree-label">${t('favorites')}</span><span class="tree-count">${favs.length}</span>`;
+      sh.addEventListener('click', () => {
+        exp['⭐'] = !favOpen;
+        saveExpandedMap(exp);
         renderNoteList();
       });
-      if (active) {
-        const x = document.createElement('span');
-        x.className = 'folder-clear';
-        x.textContent = '✕';
-        x.title = t('folderShowAll');
-        x.addEventListener('click', (e) => { e.stopPropagation(); selectedFolder = null; renderNoteList(); });
-        fh.appendChild(x);
-      }
-      list.appendChild(fh);
-    };
-
-    if (selectedFolder !== null) {
-      for (const key of keys) {
-        if (key !== selectedFolder) continue;
-        renderHeader(key);
-        for (const n of groups.get(key)!) renderOne(n, 10 + indentOf(key));
-        if (!groups.get(key)!.length) {
-          const h = document.createElement('div');
-          h.className = 'empty-hint';
-          h.textContent = t('folderEmpty');
-          list.appendChild(h);
-        }
-      }
-    } else {
-      for (const key of keys) {
-        renderHeader(key);
-        for (const n of groups.get(key)!) renderOne(n, 10 + indentOf(key));
-        if (key === FAV) {
-          const sep = document.createElement('div');
-          sep.style.height = '6px';
-          list.appendChild(sep);
-        }
-      }
+      list.appendChild(sh);
+      if (favOpen) for (const f of favs) renderOne(f, 14, { compact: true, allowReorder: false });
     }
+
+    // 🌳 klasör ağacı
+    const byFolder = new Map<string, any[]>();
+    for (const n of notes) {
+      const k = n.folder || '';
+      if (!byFolder.has(k)) byFolder.set(k, []);
+      byFolder.get(k)!.push(n);
+    }
+    const paths = new Set<string>();
+    const addPath = (p: string) => {
+      const parts = p.split('/').filter(Boolean);
+      for (let i = 0; i < parts.length; i++) paths.add(parts.slice(0, i + 1).join('/'));
+    };
+    for (const k of byFolder.keys()) if (k) addPath(k);
+    for (const f of extraFolders()) if (f) addPath(f);
+    const noteCount = new Map<string, number>();
+    for (const p of paths) {
+      let c = byFolder.get(p)?.length || 0;
+      for (const [k, arr] of byFolder) if (k.startsWith(p + '/')) c += arr.length;
+      noteCount.set(p, c);
+    }
+
+    const STEP = 14;
+    const renderLevel = (prefix: string, indent: number) => {
+      const kids: string[] = [];
+      for (const p of paths) {
+        if (prefix && !p.startsWith(prefix + '/')) continue;
+        const rest = prefix ? p.slice(prefix.length + 1) : p;
+        if (!rest.includes('/')) kids.push(p);
+      }
+      kids.sort((a, b) => a.split('/').pop()!.localeCompare(b.split('/').pop()!, 'tr'));
+      for (const p of kids) {
+        const open = exp[p] !== false;
+        const row = document.createElement('div');
+        row.className = 'tree-row folder-row' + (selectedFolder === p ? ' active' : '');
+        row.style.paddingLeft = (8 + indent) + 'px';
+        row.innerHTML = `<span class="tree-chevron${open ? ' open' : ''}">▸</span><span class="tree-icon">📁</span><span class="tree-label">${escapeHtml(p.split('/').pop()!)}</span>` + (noteCount.get(p) ? `<span class="tree-count">${noteCount.get(p)!}</span>` : '');
+        attachFolderDrop(row, p);
+        row.addEventListener('click', () => {
+          exp[p] = !open;
+          saveExpandedMap(exp);
+          selectedFolder = p; // ＋Yeni not bu klasöre düşsün
+          renderNoteList();
+        });
+        list.appendChild(row);
+        if (open) {
+          renderLevel(p, indent + STEP);
+          const inF = byFolder.get(p) || [];
+          for (const n of inF) renderOne(n, indent + STEP, { compact: true, allowReorder: false });
+          if (!inF.length) {
+            const h = document.createElement('div');
+            h.className = 'empty-hint';
+            h.style.paddingLeft = (12 + indent + STEP) + 'px';
+            h.textContent = t('folderEmpty');
+            list.appendChild(h);
+          }
+        }
+      }
+      if (!prefix) {
+        for (const n of byFolder.get('') || []) renderOne(n, indent, { compact: true, allowReorder: false });
+      }
+    };
+    renderLevel('', 0);
   } else {
     for (const n of notes) renderOne(n);
   }
-}
-
-// klasör yolunun liste girintisi: 'a' → 0, 'a/b' → 12, 'a/b/c' → 24(px)
-function indentOf(key: string): number {
-  if (!key) return 0;
-  const depth = key.split('/').filter(Boolean).length;
-  return Math.max(0, depth - 1) * 12;
 }
 
 function escapeHtml(s: string) {

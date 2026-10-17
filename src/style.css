@@ -394,6 +394,41 @@ body.focus-mode #catMascot { display: none; }
 .folder-header .folder-clear:hover { opacity: 1; background: var(--accent); color: var(--panel); }
 .folder-header.drop-ready { outline: 1px dashed var(--accent); outline-offset: -1px; color: var(--accent); background: var(--accent-soft); border-radius: 6px; }
 
+/* 🌳 Ağaç görünümü */
+.tree-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 6px; border-radius: 8px;
+  cursor: pointer; user-select: none;
+  transition: background .12s ease;
+  font-size: 13px;
+}
+.tree-row:hover { background: var(--bg-soft); }
+.tree-row:hover .tree-chevron { color: var(--text-h); }
+.tree-row .tree-chevron {
+  width: 13px; height: 13px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 10px; color: var(--text-muted);
+  transition: transform .16s ease, color .12s ease;
+}
+.tree-row .tree-chevron.open { transform: rotate(90deg); }
+.tree-row .tree-icon { flex-shrink: 0; font-size: 12px; }
+.tree-row .tree-label {
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-weight: 600; color: var(--text-h);
+  letter-spacing: .2px;
+}
+.tree-row .tree-count {
+  flex-shrink: 0; font-size: 10.5px; line-height: 1;
+  color: var(--text-muted); background: var(--bg-soft);
+  padding: 3px 7px; border-radius: 9px;
+  font-family: var(--mono);
+}
+.tree-row.folder-row.active { background: var(--accent-soft); }
+.tree-row.section { margin-bottom: 2px; }
+.tree-row.section .tree-label { color: var(--text-muted); }
+.note-item { margin: 0 0 1px; }
+
 /* ✍️ CM6 Live Preview dekorları */
 .cm-md-h1 { font-size: 1.65em; font-weight: 700; color: var(--text-h); }
 .cm-md-h2 { font-size: 1.42em; font-weight: 700; color: var(--text-h); }

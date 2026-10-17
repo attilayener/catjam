@@ -1079,9 +1079,9 @@ function updateSelBar() {
     `<button id="selTag" class="sel-act" title="${t('selTagHint')}">#</button>` +
     `<button id="selTrash" class="sel-act" title="${t('deleteNote')}">🗑</button>` +
     `<button id="selDone" class="sel-act" title="${t('close')}">✕</button>`;
-  const q = <HTMLButtonElement>(id: string) => bar.querySelector('#' + id) as HTMLButtonElement;
+  const q = (id: string): HTMLButtonElement | null => bar.querySelector('#' + id) as HTMLButtonElement | null;
   for (const b of ['selMove', 'selTag', 'selTrash']) { const btn = q(b); if (btn) btn.disabled = !selectedIds.size; }
-  q('selMove')?.addEventListener('click', async () => {
+  const moveBtn = q('selMove'); moveBtn?.addEventListener('click', async () => {
     if (!selectedIds.size) return;
     const f = prompt(t('folderNew'));
     if (f === null) return;

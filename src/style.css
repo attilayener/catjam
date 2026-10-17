@@ -463,6 +463,32 @@ body.focus-mode #catMascot { display: none; }
 .note-item.selected { background: var(--accent-soft); }
 .note-item .sel-cb { margin-right: 6px; accent-color: var(--accent); cursor: pointer; }
 
+/* 🏷 etiket ağacı */
+.tag-tree-row {
+  display: flex; align-items: center; gap: 7px;
+  padding: 5px 8px; border-radius: 8px; cursor: pointer;
+  font-size: 13px; color: var(--text);
+}
+.tag-tree-row:hover { background: var(--bg-soft); }
+.tag-tree-row .tg-caret {
+  font-size: 9px; color: var(--text-muted); width: 12px;
+  transition: transform .15s ease; transform-origin: center;
+}
+.tag-tree-row .tg-caret.open { transform: rotate(90deg); }
+.tag-tree-row .tg-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-h); }
+.tag-tree-row .tg-count {
+  font-family: var(--mono); font-size: 11px;
+  background: var(--accent-soft); color: var(--accent);
+  border-radius: 8px; padding: 1px 7px;
+}
+.tag-note-row {
+  font-size: 12.5px; color: var(--text-muted); cursor: pointer;
+  padding: 3px 8px; border-left: 2px solid var(--border); margin-left: 8px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  border-radius: 0 7px 7px 0;
+}
+.tag-note-row:hover { color: var(--accent); border-left-color: var(--accent); background: var(--bg-soft); }
+
 /* 🗓 mini takvim */
 .cal-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .cal-title { font-weight: 700; color: var(--text-h); font-size: 14px; }

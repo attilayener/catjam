@@ -3413,6 +3413,31 @@ function openTasksModal() {
   backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
 }
 
+// ---- 🏷 Etiket ağacı yardımcıları ----
+type TNode = { seg: string; fullPath: string; children: Map<string, TNode>; leafNotes: string[] | null; open: boolean };
+
+function buildTagTree(tags: string[], notesByTag: Map<string, string[]>): TNode {
+  const root: TNode = { seg: '', fullPath: '', children: new Map(), leafNotes: null, open: true };
+  for (const tg of tags) {
+    let node = root;
+    const parts = tg.split('/');
+    for (let i = 0; i < parts.length; i++) {
+      const p = parts[i];
+      const fp = parts.slice(0, i + 1).join('/');
+      if (!node.children.has(p)) node.children.set(p, { seg: p, fullPath: fp, children: new Map(), leafNotes: null, open: i === 0 });
+      node = node.children.get(p)!;
+    }
+    node.leafNotes = notesByTag.get(tg) ?? [];
+  }
+  return root;
+}
+
+function tagSubtreeCount(node: TNode): number {
+  let n = node.leafNotes?.length ?? 0;
+  for (const c of node.children.values()) n += tagSubtreeCount(c);
+  return n;
+}
+
 function openTagsModal() {
   const backdrop = document.createElement('div');
   backdrop.className = 'modal-backdrop';
@@ -3434,23 +3459,56 @@ function openTagsModal() {
     }
   }
   const tags = [...counts.keys()].sort();
-  if (!tags.length) { list.innerHTML = `<div style="color:var(--text-muted);font-size:13px;">${t('noTags')}</div>`; }
-  else {
-    for (const tg of tags) {
+  if (!tags.length) {
+    list.innerHTML = `<div style="color:var(--text-muted);font-size:13px;">${t('noTags')}</div>`;
+  } else {
+    const root = buildTagTree(tags, notesByTag);
+    const notesAll = getState().notes;
+
+    const renderRow = (node: TNode, depth: number) => {
       const row = document.createElement('div');
-      row.className = 'backlink-item';
-      row.style.display = 'flex';
-      row.style.justifyContent = 'space-between';
-      row.style.paddingLeft = (tg.split('/').length - 1) * 12 + 8 + 'px';
-      row.innerHTML = `<span>#${escapeHtml(tg)}</span><span style="color:var(--text-muted);font-size:12px;">${counts.get(tg)}</span>`;
+      row.className = 'tag-tree-row';
+      row.style.paddingLeft = (8 + depth * 14) + 'px';
+      const hasKids = node.children.size > 0 || node.leafNotes;
+      row.innerHTML = `<span class="tg-caret${node.open ? ' open' : ''}">${hasKids ? '▸' : ''}</span>` +
+        `<span class="tg-label">#${escapeHtml(node.seg)}</span>` +
+        `<span class="tg-count">${tagSubtreeCount(node)}</span>`;
       row.addEventListener('click', () => {
-        setSearch('#' + tg);
-        (document.getElementById('searchInput') as HTMLInputElement).value = '#' + tg;
-        renderNoteList();
-        backdrop.remove();
+        node.open = !node.open;
+        if (node.leafNotes) {
+          setSearch('#' + node.fullPath);
+          (document.getElementById('searchInput') as HTMLInputElement).value = '#' + node.fullPath;
+          renderNoteList();
+        }
+        renderAllRows();
       });
       list.appendChild(row);
-    }
+      if (node.open) {
+        for (const c of [...node.children.values()].sort((a, b) => a.seg.localeCompare(b.seg))) renderRow(c, depth + 1);
+        if (node.open && node.leafNotes) {
+          for (const nid of node.leafNotes.slice(0, 12)) {
+            const note = notesAll.find((x) => x.id === nid);
+            if (!note) continue;
+            const nr = document.createElement('div');
+            nr.className = 'tag-note-row';
+            nr.style.paddingLeft = (30 + depth * 14) + 'px';
+            nr.textContent = (note.locked ? '🔒 ' : '') + note.title;
+            nr.addEventListener('click', () => {
+              setActive(note.id);
+              backdrop.remove();
+              renderAll();
+              window.dispatchEvent(new Event('resize'));
+            });
+            list.appendChild(nr);
+          }
+        }
+      }
+    };
+    const renderAllRows = () => {
+      list.innerHTML = '';
+      for (const c of [...root.children.values()].sort((a, b) => a.seg.localeCompare(b.seg))) renderRow(c, 0);
+    };
+    renderAllRows();
   }
   const footer = document.createElement('div');
   footer.style.display = 'flex';

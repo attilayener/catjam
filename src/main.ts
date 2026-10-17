@@ -2492,24 +2492,45 @@ function openVersionsModal() {
     const modal = document.createElement('div');
     modal.className = 'modal';
     modal.style.maxWidth = '680px';
-    modal.innerHTML = '<h3>Version history</h3><div id="versionsList" style="max-height:55vh;overflow:auto;"></div>';
+    modal.innerHTML = '<h3>Version history</h3><div id="diffWrap" style="display:none;margin-bottom:10px;"></div><div id="versionsList" style="max-height:55vh;overflow:auto;"></div>';
     const list = modal.querySelector('#versionsList') as HTMLDivElement;
     if (!versions.length) list.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">No saved versions yet.</div>';
-    for (const v of versions) {
+    versions.forEach((v) => {
       const row = document.createElement('div');
       row.className = 'backlink-item';
       row.style.display = 'flex';
-      row.style.flexDirection = 'column';
-      row.style.gap = '2px';
-      row.innerHTML = `<div style="color:var(--text-h);font-weight:500;">${new Date(v.createdAt).toLocaleString()}</div><div style="color:var(--text-muted);font-size:12px;white-space:pre-wrap;">${escapeHtml(v.content.slice(0, 160))}…</div>`;
-      row.addEventListener('click', async () => {
+      row.style.gap = '8px';
+      row.style.alignItems = 'flex-start';
+      const info = document.createElement('div');
+      info.style.flex = '1';
+      info.style.minWidth = '0';
+      info.innerHTML = `<div style="color:var(--text-h);font-weight:500;">${new Date(v.createdAt).toLocaleString()}</div><div style="color:var(--text-muted);font-size:12px;white-space:pre-wrap;">${escapeHtml(v.content.slice(0, 160))}…</div>`;
+      info.addEventListener('click', async () => {
         if (!confirm('Restore this version? Current content will be overwritten.')) return;
         await updateNote(n.id, { content: v.content, title: v.title });
         renderAll();
         backdrop.remove();
       });
+      const diffBtn = document.createElement('button');
+      diffBtn.className = 'iconbtn';
+      diffBtn.style.cssText = 'width:auto;height:auto;padding:3px 9px;font-size:12px;border-color:var(--border);background:var(--bg-soft);flex-shrink:0;';
+      diffBtn.textContent = '⇄';
+      diffBtn.title = t('diffAgainstCurrent');
+      diffBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (noteLocked(n) && !unlockedSet.has(n.id)) { alert(t('lockedTitle') + ' — ' + t('lockedPlaceholder')); return; }
+        const ta = document.getElementById('editorTextarea') as HTMLTextAreaElement | null;
+        const current = ta && !ta.readOnly ? ta.value : n.content;
+        const toks = wordDiff(v.content, current);
+        renderDiffView(modal.querySelector('#diffWrap') as HTMLDivElement, toks);
+        list.querySelectorAll('.ver-diff-on').forEach((x) => x.classList.remove('ver-diff-on'));
+        row.classList.add('ver-diff-on');
+        diffWrapScrollIntoView();
+      });
+      row.appendChild(info);
+      row.appendChild(diffBtn);
       list.appendChild(row);
-    }
+    });
     const footer = document.createElement('div');
     footer.style.display = 'flex';
     footer.style.justifyContent = 'flex-end';
@@ -2526,6 +2547,71 @@ function openVersionsModal() {
     document.body.appendChild(backdrop);
     backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
   })();
+}
+
+function diffWrapScrollIntoView() {
+  const wrap = document.getElementById('diffWrap');
+  wrap?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// ---- Kelime seviyesi fark (LCS tabanlı) ----
+function tokenizeForDiff(s: string): string[] {
+  return s.split(/(\s+)/).filter((x) => x.length > 0);
+}
+interface DiffTok { type: 'same' | 'del' | 'add'; text: string }
+function diffLcs(A: string[], B: string[]): DiffTok[] {
+  const n = A.length, m = B.length;
+  const stride = m + 1;
+  const dp = new Int32Array((n + 1) * stride);
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i * stride + j] = A[i] === B[j]
+        ? dp[(i + 1) * stride + j + 1] + 1
+        : Math.max(dp[(i + 1) * stride + j], dp[i * stride + j + 1]);
+    }
+  }
+  const out: DiffTok[] = [];
+  const push = (type: DiffTok['type'], text: string) => {
+    const last = out[out.length - 1];
+    if (last && last.type === type) last.text += text;
+    else out.push({ type, text });
+  };
+  let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (A[i] === B[j]) { push('same', A[i]); i++; j++; }
+    else if (dp[(i + 1) * stride + j] >= dp[i * stride + j + 1]) { push('del', A[i]); i++; }
+    else { push('add', B[j]); j++; }
+  }
+  while (i < n) { push('del', A[i]); i++; }
+  while (j < m) { push('add', B[j]); j++; }
+  return out;
+}
+function wordDiff(a: string, b: string): DiffTok[] {
+  let A = tokenizeForDiff(a);
+  let B = tokenizeForDiff(b);
+  const CAP = 1400;
+  let trimmed = false;
+  if (A.length > CAP) { A = A.slice(0, CAP); trimmed = true; }
+  if (B.length > CAP) { B = B.slice(0, CAP); trimmed = true; }
+  const toks = diffLcs(A, B);
+  if (trimmed) toks.push({ type: 'same', text: ' …' });
+  return toks;
+}
+function renderDiffView(wrap: HTMLDivElement, toks: DiffTok[]) {
+  const legend = `<div style="display:flex;gap:12px;font-size:11.5px;color:var(--text-muted);margin-bottom:6px;align-items:center;"><span class="diff-del">– ${t('diffRemoved')}</span><span class="diff-add">+ ${t('diffAdded')}</span></div>`;
+  const frag = document.createElement('div');
+  frag.className = 'diff-box';
+  for (const t of toks) {
+    const span = document.createElement('span');
+    if (t.type === 'del') span.className = 'diff-del';
+    else if (t.type === 'add') span.className = 'diff-add';
+    span.textContent = t.text;
+    frag.appendChild(span);
+  }
+  wrap.innerHTML = '';
+  wrap.style.display = 'block';
+  wrap.insertAdjacentHTML('beforeend', legend);
+  wrap.appendChild(frag);
 }
 
 function roamBlocksToMd(blocks: any[], depth = 0): string[] {

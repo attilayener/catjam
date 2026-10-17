@@ -230,6 +230,7 @@ function buildShell() {
           <button class="iconbtn" id="btnPdf" title="${t('exportPdf')}">📄 PDF</button>
           <button class="iconbtn" id="btnWeekly" title="${t('weeklyReport')}">📊 ${t('weeklyReport')}</button>
           <button class="iconbtn" id="btnStats" title="${t('statsTitle')}">📈 ${t('statsTitle')}</button>
+          <button class="iconbtn" id="btnMiniCal" title="${t('miniCalendar')}">🗓 ${t('miniCalendar')}</button>
           <button class="iconbtn" id="btnActivityFlow" title="${t('actFlow')}">🌊 ${t('actFlow')}</button>
           <button class="iconbtn" id="btnTrash" title="${t('trash')}">🗑 ${t('trash')}</button>
         </div>
@@ -413,6 +414,7 @@ function bindEvents() {
   document.getElementById('btnPdf')!.addEventListener('click', () => { void exportCurrentNotePdf(); });
   document.getElementById('btnWeekly')!.addEventListener('click', () => { void openWeeklyReport(); });
   document.getElementById('btnStats')!.addEventListener('click', () => openStatsModal());
+  document.getElementById('btnMiniCal')!.addEventListener('click', () => openMiniCalendarModal());
   document.getElementById('btnActivityFlow')!.addEventListener('click', () => openActivityFlowModal());
   document.getElementById('btnBacklinks')!.addEventListener('click', () => toggleSidePanel());
   document.getElementById('closeSidePanel')!.addEventListener('click', () => toggleSidePanel());
@@ -1576,6 +1578,73 @@ function openActivityFlowModal() {
     </div>`);
   }
   (modal.querySelector('#affList') as HTMLDivElement).innerHTML = rows.join('');
+}
+
+// ---- 🗓 Mini takvim: günlük not sayısı + hedef noktası ----
+function openMiniCalendarModal() {
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop';
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.style.maxWidth = '380px';
+  backdrop.appendChild(modal);
+  document.body.appendChild(backdrop);
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+
+  const cur = new Date();
+  cur.setDate(1);
+
+  function renderMonth() {
+    const notes = getState().notes.filter((n) => !n.deletedAt);
+    const dw = dayWords();
+    const goal = dailyGoal();
+    const y = cur.getFullYear();
+    const m = cur.getMonth();
+    const today = isoDayKey(new Date());
+    const firstDay = new Date(y, m, 1);
+    const offset = (firstDay.getDay() + 6) % 7; // pazartesi başlangıç
+    const dim = new Date(y, m + 1, 0).getDate();
+    const title = cur.toLocaleDateString(dashLang(), { month: 'long', year: 'numeric' });
+    const weekdays = Array.from({ length: 7 }, (_, i) =>
+      new Date(2024, 0, 1 + i).toLocaleDateString(dashLang(), { weekday: 'narrow' }));
+    let cells = '';
+    for (let i = 0; i < offset; i++) cells += `<div class="cal-cell empty"></div>`;
+    for (let d = 1; d <= dim; d++) {
+      const key = isoDayKey(new Date(y, m, d));
+      const touched = notes.filter((n) => isoDayKey(new Date(n.updatedAt)) === key).length;
+      const hit = (dw[key] || 0) >= goal;
+      cells += `<div class="cal-cell${key === today ? ' today' : ''}" data-k="${key}" title="${touched} ${t('statsNotes')} · ${dw[key] || 0} ${t('statsWordsUnit')}">
+        <span class="cal-d">${d}</span>
+        <span class="cal-badges">${touched ? `<i class="cal-n">${touched}</i>` : ''}${hit ? '<i class="cal-hit"></i>' : ''}</span>
+      </div>`;
+    }
+    modal.innerHTML = `
+      <h3>🗓 ${t('miniCalendar')}</h3>
+      <div class="cal-nav">
+        <button class="iconbtn" id="calPrev" title="−1">‹</button>
+        <span class="cal-title">${title}</span>
+        <button class="iconbtn" id="calNext" title="+1">›</button>
+      </div>
+      <div class="cal-week">${weekdays.map((w) => `<span>${w}</span>`).join('')}</div>
+      <div class="cal-grid">${cells}</div>
+      <div class="cal-legend">🟢 ${t('statsGoal')} · <i class="cal-n">N</i> ${t('statsNotes')}</div>
+      <div style="text-align:right;margin-top:8px;"><button class="iconbtn" id="calClose" style="width:auto;height:auto;padding:6px 14px;">${t('close')}</button></div>`;
+    (modal.querySelector('#calClose') as HTMLButtonElement).addEventListener('click', () => backdrop.remove());
+    (modal.querySelector('#calPrev') as HTMLButtonElement).addEventListener('click', () => { cur.setMonth(cur.getMonth() - 1); renderMonth(); });
+    (modal.querySelector('#calNext') as HTMLButtonElement).addEventListener('click', () => { cur.setMonth(cur.getMonth() + 1); renderMonth(); });
+    modal.querySelectorAll<HTMLElement>('.cal-cell[data-k]').forEach((cell) => {
+      cell.addEventListener('click', () => {
+        const k = cell.dataset.k!;
+        const dayNotes = notes.filter((n) => isoDayKey(new Date(n.updatedAt)) === k).sort((a, b) => b.updatedAt - a.updatedAt);
+        if (!dayNotes.length) return;
+        setActive(dayNotes[0].id);
+        backdrop.remove();
+        showEditor();
+        renderAll();
+      });
+    });
+  }
+  renderMonth();
 }
 
 function openStatsModal() {

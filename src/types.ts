@@ -7,6 +7,9 @@ export interface Note {
   folder?: string;
   path?: string;
   order?: number;
+  deletedAt?: number;
+  locked?: boolean;
+  lockData?: { iv: string; salt: string; cipher: string; hint?: string };
 }
 
 export interface AppSettings {

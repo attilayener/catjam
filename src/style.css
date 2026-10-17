@@ -66,6 +66,21 @@ button:active { transform: translateY(0.5px); }
   box-shadow: var(--shadow); max-width: min(90vw, 480px); text-align: center;
 }
 #voiceStatus.show { display: block; }
+#appToast {
+  position: fixed; left: 50%; bottom: 70px; transform: translateX(-50%);
+  z-index: 1001; display: none;
+  background: var(--panel); border: 1px solid var(--border); color: var(--text-h);
+  padding: 10px 12px 10px 16px; border-radius: 12px; font-size: 13px;
+  box-shadow: var(--shadow); max-width: min(92vw, 520px);
+  align-items: center; gap: 12px;
+}
+#appToast.show { display: flex; }
+#appToast .toast-action {
+  background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent);
+  border-radius: 8px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer;
+  white-space: nowrap;
+}
+#appToast .toast-action:hover { background: var(--accent); color: #fff; }
 .iconbtn svg { width: 18px; height: 18px; }
 
 /* Layout */

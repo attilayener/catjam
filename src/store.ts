@@ -56,8 +56,9 @@ export async function initStore() {
 
 export function filteredNotes(): Note[] {
   const q = state.search.trim().toLowerCase();
-  if (!q) return state.notes;
-  return state.notes.filter(
+  const base = state.notes.filter((n) => !n.deletedAt);
+  if (!q) return base;
+  return base.filter(
     (n) => n.title.toLowerCase().includes(q) || n.content.toLowerCase().includes(q),
   );
 }
@@ -106,15 +107,45 @@ export async function updateNote(id: string, patch: Partial<Note>) {
   emit();
 }
 
-export async function deleteNote(id: string) {
+export async function deleteNote(id: string, permanent = false) {
   const n = state.notes.find((x) => x.id === id);
-  if (n?.path) deleteVaultFile(n.path).catch(() => {});
-  await db.notes.delete(id);
-  state.notes = state.notes.filter((n) => n.id !== id);
-  if (state.activeId === id) {
-    state.activeId = state.notes[0]?.id ?? null;
+  if (permanent) {
+    if (n?.path) deleteVaultFile(n.path).catch(() => {});
+    await db.notes.delete(id);
+    state.notes = state.notes.filter((x) => x.id !== id);
+    if (state.activeId === id) {
+      state.activeId = state.notes.find((x) => !x.deletedAt)?.id ?? state.notes[0]?.id ?? null;
+    }
+    emit();
+    return;
   }
+  // softened: çöpe at (restore edilebilir)
+  const idx = state.notes.findIndex((x) => x.id === id);
+  if (idx < 0) return;
+  const updated = { ...state.notes[idx], deletedAt: Date.now(), updatedAt: Date.now() };
+  state.notes[idx] = updated as Note;
+  if (state.activeId === id) {
+    state.activeId = state.notes.find((x) => !x.deletedAt)?.id ?? null;
+  }
+  await db.notes.put(updated);
   emit();
+}
+
+export async function restoreNote(id: string) {
+  const idx = state.notes.findIndex((x) => x.id === id);
+  if (idx < 0) return;
+  const updated: Note = { ...state.notes[idx], deletedAt: undefined, updatedAt: Date.now() };
+  delete updated.deletedAt;
+  state.notes[idx] = updated;
+  state.activeId = id;
+  await db.notes.put(updated);
+  emit();
+}
+
+export function deletedNotes(): Note[] {
+  return state.notes
+    .filter((n) => !!n.deletedAt)
+    .sort((a, b) => (b.deletedAt ?? 0) - (a.deletedAt ?? 0));
 }
 
 export function setActive(id: string | null) {

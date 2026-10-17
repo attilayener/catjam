@@ -1,5 +1,5 @@
 import './style.css';
-import { initStore, getState, subscribe, createNote, updateNote, deleteNote, setActive, setSearch, setTheme, setEditorMode, getActiveNote, backlinksOf, findNoteByTitle, filteredNotes, openVault, setLanguage, reorderNotes } from './store';
+import { initStore, getState, subscribe, createNote, updateNote, deleteNote, restoreNote, deletedNotes, setActive, setSearch, setTheme, setEditorMode, getActiveNote, backlinksOf, findNoteByTitle, filteredNotes, openVault, setLanguage, reorderNotes } from './store';
 import { renderMarkdown, extractWikiLinks, extractTags } from './markdown';
 import { THEMES } from './themes';
 import { saveSetting, db } from './db';
@@ -102,6 +102,7 @@ function buildShell() {
       <button class="iconbtn" id="btnExport" title="Export">⬇ Export</button>
       <button class="iconbtn" id="btnImport" title="Import">⬆ Import</button>
       <button class="iconbtn" id="btnImportRoam" title="Import Roam JSON">Roam</button>
+      <button class="iconbtn" id="btnTrash" title="${t('trash')}">🗑 ${t('trash')}</button>
     </div>
   `;
 
@@ -238,6 +239,7 @@ function bindEvents() {
     };
     input.click();
   });
+  document.getElementById('btnTrash')!.addEventListener('click', () => openTrashModal());
   document.getElementById('btnBacklinks')!.addEventListener('click', () => toggleSidePanel());
   document.getElementById('closeSidePanel')!.addEventListener('click', () => toggleSidePanel());
   document.getElementById('btnGraph')!.addEventListener('click', () => showGraph());
@@ -262,8 +264,10 @@ function bindEvents() {
   document.getElementById('btnDelete')!.addEventListener('click', async () => {
     const n = getActiveNote(); if (!n) return;
     if (!confirm(`Delete "${n.title}"?`)) return;
-    await deleteNote(n.id);
+    const noteId = n.id, title = n.title;
+    await deleteNote(noteId);
     renderAll();
+    undoToast(noteId, title);
   });
   document.getElementById('btnProps')!.addEventListener('click', () => {
     const p = document.getElementById('propsPanel')!;
@@ -766,8 +770,10 @@ function renderNoteList() {
     delBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
       if (!confirm(t('deleteConfirm', { title: n.title }))) return;
-      await deleteNote(n.id);
+      const noteId = n.id, title = n.title;
+      await deleteNote(noteId);
       renderAll();
+      undoToast(noteId, title);
     });
     item.addEventListener('dragstart', (e) => {
       e.dataTransfer?.setData('text/plain', n.id);
@@ -825,6 +831,81 @@ function renderNoteList() {
 
 function escapeHtml(s: string) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// ---- Toast (aksiyonlu bildirim) ----
+let toastTimer: any = null;
+function showToast(text: string, action?: { label: string; onAction: () => void }) {
+  let el = document.getElementById('appToast');
+  if (!el) { el = document.createElement('div'); el.id = 'appToast'; document.body.appendChild(el); }
+  el.innerHTML = `<span>${escapeHtml(text)}</span>` + (action ? `<button class="toast-action">${escapeHtml(action.label)}</button>` : '');
+  if (action) (el.querySelector('.toast-action') as HTMLButtonElement)?.addEventListener('click', () => { action.onAction(); hideToast(); });
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(hideToast, 5500);
+}
+function hideToast() {
+  document.getElementById('appToast')?.classList.remove('show');
+}
+
+function undoToast(noteId: string, title: string) {
+  showToast(t('deletedUndo', { title }), {
+    label: t('undo'),
+    onAction: async () => { await restoreNote(noteId); renderAll(); },
+  });
+}
+
+function openTrashModal() {
+  const notes = deletedNotes();
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop';
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.innerHTML = `<h3>🗑 ${t('trashTitle')}</h3><div id="trashList" style="max-height:55vh;overflow:auto;"></div>`;
+  backdrop.appendChild(modal);
+  document.body.appendChild(backdrop);
+  const list = modal.querySelector('#trashList') as HTMLDivElement;
+  if (!notes.length) {
+    list.innerHTML = `<div style="color:var(--text-muted);font-size:13px;">${t('trashEmpty')}</div>`;
+  } else {
+    for (const n of notes) {
+      const row = document.createElement('div');
+      row.className = 'backlink-item';
+      row.style.display = 'flex';
+      row.style.alignItems = 'center';
+      row.style.gap = '8px';
+      const when = new Date(n.deletedAt ?? Date.now()).toLocaleString();
+      row.innerHTML = `<div style="flex:1;min-width:0;"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-h);">${escapeHtml(n.title)}</div><div style="color:var(--text-muted);font-size:11px;">${escapeHtml(when)}</div></div>`;
+      const rest = document.createElement('button');
+      rest.className = 'iconbtn';
+      rest.style.cssText = 'width:auto;padding:4px 10px;font-size:12px;flex-shrink:0;border-color:var(--border);background:var(--bg-soft);';
+      rest.textContent = '↩ ' + t('restore');
+      rest.addEventListener('click', async () => {
+        await restoreNote(n.id); renderAll(); backdrop.remove();
+      });
+      const perm = document.createElement('button');
+      perm.className = 'iconbtn';
+      perm.style.cssText = 'width:auto;padding:4px 10px;font-size:12px;flex-shrink:0;border-color:var(--border);background:var(--bg-soft);';
+      perm.textContent = '🗑';
+      perm.addEventListener('click', async () => {
+        if (!confirm(t('deleteForeverConfirm', { title: n.title }))) return;
+        await deleteNote(n.id, true); renderAll(); backdrop.remove();
+      });
+      row.appendChild(rest);
+      row.appendChild(perm);
+      list.appendChild(row);
+    }
+  }
+  const footer = document.createElement('div');
+  footer.style.cssText = 'display:flex;justify-content:flex-end;margin-top:10px;';
+  const close = document.createElement('button');
+  close.className = 'iconbtn';
+  close.style.cssText = 'width:auto;padding:4px 12px;';
+  close.textContent = t('close');
+  close.addEventListener('click', () => backdrop.remove());
+  footer.appendChild(close);
+  modal.appendChild(footer);
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
 }
 
 function applyMode(mode: string) {

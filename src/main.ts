@@ -3,7 +3,7 @@ import katexCss from 'katex/dist/katex.min.css?inline';
 import { initStore, getState, subscribe, createNote, updateNote, deleteNote, restoreNote, deletedNotes, setActive, setSearch, setTheme, setEditorMode, getActiveNote, backlinksOf, findNoteByTitle, filteredNotes, openVault, setLanguage, reorderNotes } from './store';
 import type { Note } from './types';
 import { renderMarkdown, extractWikiLinks, extractTags } from './markdown';
-import { THEMES } from './themes';
+import { THEMES, setCustomOverride, customOverrideActive } from './themes';
 import { saveSetting, db } from './db';
 import { t, availableLanguages, getLanguage } from './i18n';
 import { saveImage, loadImages } from './images';
@@ -129,6 +129,8 @@ function applyCustomCss(css: string) {
   }
   el.textContent = css || '';
   customCss = css;
+  // 🌗 Özel CSS doluysa: Yapış başı, seçili tema pasif (tema değişkenleri söner, kazanan bu katman)
+  setCustomOverride(!!css.trim());
 }
 
 function applyEditorFont(profile: 'sans' | 'serif' | 'mono') {
@@ -2942,6 +2944,7 @@ function openSettings() {
       <div style="font-size:13px;color:var(--text-muted);margin-bottom:6px;">${t('themeEditor')}</div>
       <textarea id="customCssInput" class="search-input" rows="8" spellcheck="false" style="width:100%;font-family:var(--mono);font-size:12px;line-height:1.5;resize:vertical;" placeholder=":root { --accent: #ff9900; }"></textarea>
       <div style="font-size:11px;color:var(--text-muted);margin-top:6px;line-height:1.5;">${t('themeEditorHint')}</div>
+      <div style="font-size:11px;color:var(--accent);margin-top:4px;line-height:1.5;">⚔ ${t('themeOverrideHint')}</div>
       <div style="display:flex;gap:8px;margin-top:8px;">
         <button class="iconbtn" id="customCssReset" style="width:auto;padding:5px 12px;font-size:12px;border-color:var(--border);background:var(--bg-soft);">⌫ ${t('themeEditorReset')}</button>
       </div>
@@ -2971,14 +2974,15 @@ function openSettings() {
   backdrop.appendChild(modal);
   document.body.appendChild(backdrop);
   const row = modal.querySelector('#themeRow')!;
-  for (const t of THEMES) {
+  for (const th of THEMES) {
     const card = document.createElement('div');
-    card.className = 'theme-card' + (t.id === getState().settings.theme ? ' active' : '');
-    card.innerHTML = `<div class="name">${t.name}</div><div style="font-size:11px;color:var(--text-muted)">${t.description}</div>`;
+    card.className = 'theme-card' + (th.id === getState().settings.theme ? ' active' : '');
+    card.innerHTML = `<div class="name">${th.name}</div><div style="font-size:11px;color:var(--text-muted)">${th.description}</div>`;
     card.addEventListener('click', async () => {
-      await setTheme(t.id);
+      await setTheme(th.id);
       modal.querySelectorAll('.theme-card').forEach((c) => c.classList.remove('active'));
       card.classList.add('active');
+      if (customOverrideActive()) showToast('🎨 ' + t('themePausedCustom'));
     });
     row.appendChild(card);
   }

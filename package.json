@@ -3,12 +3,40 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "description": "Minimalist markdown not defteri — kedi maskotlu, tamamen lokal (Obsidian tarzi)",
+  "author": "attilayener",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "app": "npm run build && electron .",
+    "app:dev": "electron .",
+    "exe": "npm run build && electron-builder --win"
+  },
+  "build": {
+    "appId": "app.catjam.notes",
+    "productName": "Cat Jam",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "electron/**"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "public/icons/cat-512.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "Cat Jam"
+    }
   },
   "devDependencies": {
+    "electron": "^44.8.0",
+    "electron-builder": "^26.15.3",
     "typescript": "~6.0.2",
     "vite": "^8.3.0"
   },

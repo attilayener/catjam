@@ -343,12 +343,16 @@ function setMood(m: 'sleep' | 'happy' | 'lazy' | 'neutral') {
 
 // --- kelime tepkileri (autosave sonrası main çağırır)
 let lastReact = 0;
+let lastXpAward = 0;
 export function catKeywordReaction(content: string) {
   const now = Date.now();
   save('catjam:lastsave', String(now));
   if (!catEnabled()) return;
   updateMood();
-  addAffection(1); // her içerik kaydı minik puan
+  if (now - lastXpAward > 25000) {
+    lastXpAward = now;
+    addAffection(1); // en fazla ~1 puan / 25 sn (yazma çabası)
+  }
   if (now - lastReact < 30000) return;
   const rules: { re: RegExp; tr: string; en: string }[] = [
     { re: /\b(kahve|çay|coffee|tea)\b/i, tr: 'Kokusunu aldım! Bir yudum da bana? ☕', en: 'I smell it! One sip for me? ☕' },

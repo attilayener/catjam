@@ -2375,7 +2375,34 @@ function updateSuggestions() {
       }
     }
   }
+  autoLinkCheck(ta, before, pos);
   hideSuggestions();
+}
+// ---- Otomatik [[link]] algılama ----
+// Düzel yazılmış (köşeli parantez olmayan) kelime kasadaki bir başlıkla başlıyorsa link dönüşümü öner.
+function autoLinkCheck(ta: HTMLTextAreaElement, before: string, pos: number) {
+  // 1) kelime (en az 3 karakter, harf/rakam/çizgi)
+  const wm = before.match(/([\p{L}\p{N}][\p{L}\p{N}_·-]{2,})$/u);
+  if (!wm) return;
+  const word = wm[1];
+  const wordStart = pos - word.length;
+  // 2) zaten [[ ]]: içindeyse karışma
+  const after = ta.value.slice(ta.selectionStart, ta.selectionStart + 2);
+  if (after === ']]') return;
+  // 3) kelime zaten bir linkin parçası mı? [[ kapanmamış varsa wiki moduna girmişizdir → dokunma
+  const wikiOpen = before.slice(Math.max(0, wordStart - 120), wordStart);
+  if (/\[\[[^\]]*$/.test(wikiOpen)) return;
+  // 4) aday başlıklar (kendisi hariç, silinmiş/kilitli hariç)
+  const q = word.toLowerCase();
+  const n = getActiveNote();
+  const titles = getState().notes
+    .filter((x) => !x.deletedAt && !x.locked && x.id !== n?.id)
+    .map((x) => x.title)
+    .filter((t2) => t2 && t2.toLowerCase().startsWith(q))
+    .slice(0, 5);
+  if (!titles.length) return;
+  const items = titles.map((t2) => ({ label: '🔗 ' + t2, insert: t2 }));
+  showSuggest(items, wordStart, 'wiki');
 }
 function showSuggest(items: { label: string; insert: string }[], triggerStart: number, type: 'wiki' | 'tag' | 'slash') {
   suggestState = { triggerStart, items, index: 0, type };

@@ -91,6 +91,37 @@ button:active { transform: translateY(0.5px); }
 }
 .lock-card .lock-emoji { font-size: 40px; opacity: .8; }
 .lock-card .lock-title { color: var(--text-h); font-weight: 600; font-size: 16px; }
+
+/* --- 🐱 Kedi maskot --- */
+#catMascot {
+  position: fixed; right: 16px; bottom: 16px; z-index: 995;
+  width: 48px; height: 48px; border: none; padding: 0;
+  background: transparent; border-radius: 50%;
+  cursor: pointer; filter: drop-shadow(0 4px 10px rgba(0,0,0,.25));
+  transition: transform .18s ease;
+}
+#catMascot:hover { transform: translateY(-3px) scale(1.06); }
+#catMascot:active { transform: scale(.92); }
+#catMascot:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+body.focus-mode #catMascot { display: none; }
+#catMascot .cat-tail { transform-origin: 33px 33px; animation: catTail 3.2s ease-in-out infinite; }
+#catMascot.wiggle .cat-tail { animation: catTailFast .9s ease-in-out; }
+#catMascot.wiggle svg { animation: catBounce .6s ease; }
+#catMascot.happy svg { animation: catBounce .7s ease 2; }
+#catMascot.happy .cat-tail { animation: catTailFast .5s ease-in-out 3; transform-origin: 33px 33px; }
+#catBubble {
+  position: absolute; bottom: 52px; right: 4px;
+  min-width: 120px; max-width: 200px;
+  background: var(--panel); color: var(--text); border: 1px solid var(--border);
+  border-radius: 12px 12px 2px 12px; padding: 8px 11px;
+  font-size: 12.5px; line-height: 1.45; text-align: left;
+  box-shadow: var(--shadow); opacity: 0; transform: translateY(6px) scale(.96);
+  transition: opacity .22s ease, transform .22s ease; pointer-events: none;
+}
+#catBubble.show { opacity: 1; transform: translateY(0) scale(1); }
+@keyframes catTail { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-14deg); } }
+@keyframes catTailFast { 0%, 100% { transform: rotate(0deg); } 25% { transform: rotate(18deg); } 75% { transform: rotate(-20deg); } }
+@keyframes catBounce { 0%, 100% { transform: translateY(0); } 35% { transform: translateY(-7px); } 65% { transform: translateY(0); } }
 .iconbtn svg { width: 18px; height: 18px; }
 
 /* Layout */

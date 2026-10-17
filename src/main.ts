@@ -263,7 +263,74 @@ function buildShell() {
   voiceStatus.id = 'voiceStatus';
   document.body.appendChild(voiceStatus);
 
+  buildCat();
   bindEvents();
+}
+
+// ---- 🐱 Kedi maskot ----
+function isCatEnabled(): boolean {
+  return localStorage.getItem('catjam:cat') !== '0';
+}
+
+function buildCat() {
+  document.getElementById('catMascot')?.remove();
+  if (!isCatEnabled()) return;
+  const cat = document.createElement('button');
+  cat.id = 'catMascot';
+  cat.title = t('catMascot');
+  cat.innerHTML = `
+    <div id="catBubble"></div>
+    <svg width="46" height="46" viewBox="0 0 46 46" aria-hidden="true">
+      <g class="cat-tail"><path d="M33 33 Q 41 33 41 24" fill="none" stroke="var(--accent)" stroke-width="3.4" stroke-linecap="round"/></g>
+      <ellipse cx="23" cy="31.5" rx="11.5" ry="8.5" fill="var(--accent)"/>
+      <circle cx="23" cy="17" r="9.5" fill="var(--accent)"/>
+      <path d="M15.4 12.5 L14 4.5 L20.8 9.5 Z" fill="var(--accent)"/>
+      <path d="M30.6 12.5 L32 4.5 L25.2 9.5 Z" fill="var(--accent)"/>
+      <circle cx="19.6" cy="16.4" r="1.4" fill="var(--bg)"/>
+      <circle cx="26.4" cy="16.4" r="1.4" fill="var(--bg)"/>
+      <path d="M21.6 20 L24.4 20 L23 22.2 Z" fill="var(--bg)"/>
+      <g stroke="var(--bg)" stroke-width="0.9" opacity="0.85">
+        <line x1="13.5" y1="18.5" x2="7.5" y2="16.5"/>
+        <line x1="13.5" y1="20.5" x2="7.5" y2="22.5"/>
+        <line x1="32.5" y1="18.5" x2="38.5" y2="16.5"/>
+        <line x1="32.5" y1="20.5" x2="38.5" y2="22.5"/>
+      </g>
+    </svg>`;
+  cat.addEventListener('click', () => {
+    const bubble = cat.querySelector('#catBubble') as HTMLDivElement;
+    const quips = tr() ? CAT_QUIPS_TR : CAT_QUIPS_EN;
+    bubble.textContent = quips[Math.floor(Math.random() * quips.length)];
+    cat.classList.add('talking');
+    setTimeout(() => cat.classList.remove('talking'), 700);
+    setTimeout(() => bubble.classList.add('show'), 250);
+    clearTimeout(catBubbleTimer);
+    catBubbleTimer = setTimeout(() => bubble.classList.remove('show'), 2800);
+  });
+  document.body.appendChild(cat);
+}
+
+let catBubbleTimer: any = null;
+const CAT_QUIPS_TR = ['Miyav!', 'Pur pur… 😺', 'Notlar kayıtlı, minnettarım.', 'Bugün ne yazacağız?', 'Bana mama, sana ilham.', 'Balansak? Hayır, dashboard!', 'Kafein + kedi = nil'];
+const CAT_QUIPS_EN = ['Meow!', 'Purrr… 😺', 'Notes saved — you\'re welcome.', 'What are we writing today?', 'Catnip and coffee time.', 'I archived a hairball. Zero bugs.', 'Purr productivity!'];
+
+function tr(): boolean { return getState().settings.language === 'tr'; }
+
+let lastCatWiggle = 0;
+function catAutoWiggle() {
+  const now = Date.now();
+  if (now - lastCatWiggle < 4000) return;
+  lastCatWiggle = now;
+  catPoke('wiggle');
+}
+
+function catPoke(kind: 'wiggle' | 'happy' = 'wiggle') {
+  if (!isCatEnabled()) return;
+  const cat = document.getElementById('catMascot');
+  if (!cat) return;
+  cat.classList.remove('wiggle', 'happy');
+  void (cat as HTMLElement).offsetWidth; // restart animation
+  cat.classList.add(kind);
+  setTimeout(() => cat.classList.remove(kind), 900);
 }
 
 let graphAnimId: number | null = null;
@@ -1088,6 +1155,7 @@ ${clone.innerHTML}
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 4000);
   showToast('🌐 ' + t('exportedHtml'));
+  catPoke('happy');
 }
 
 // ---- Toast (aksiyonlu bildirim) ----
@@ -1510,6 +1578,13 @@ function openSettings() {
       <input type="range" min="12" max="24" value="${getState().settings.fontSize}" id="fontSizeRange" />
       <span id="fontSizeLabel">${getState().settings.fontSize}px</span>
     </div>
+    <div style="margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:12px;">
+      <div style="font-size:13px;color:var(--text-muted);">🐱 ${t('catMascot')}</div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text);cursor:pointer;white-space:nowrap;">
+        <input type="checkbox" id="catMascotToggle" ${isCatEnabled() ? 'checked' : ''} />
+        <span style="font-size:12px;color:var(--text-muted);">${isCatEnabled() ? t('catOn') : t('catOff')}</span>
+      </label>
+    </div>
     <div style="margin-bottom:12px;">
       <div style="font-size:13px;color:var(--text-muted);margin-bottom:6px;">${t('writeProfile')}</div>
       <select id="editorFontSelect" class="search-input" style="width:100%;">
@@ -1580,6 +1655,14 @@ function openSettings() {
   });
 
   const range = modal.querySelector('#fontSizeRange') as HTMLInputElement;
+  // 🐱 maskot aç/kapa
+  const catToggle = modal.querySelector('#catMascotToggle') as HTMLInputElement | null;
+  catToggle?.addEventListener('change', () => {
+    localStorage.setItem('catjam:cat', catToggle.checked ? '1' : '0');
+    (modal.querySelector('#catMascotToggle')!.closest('label')!.querySelector('span') as HTMLSpanElement).textContent = catToggle.checked ? t('catOn') : t('catOff');
+    buildCat();
+    if (catToggle.checked) catPoke('happy');
+  });
   const label = modal.querySelector('#fontSizeLabel') as HTMLSpanElement;
   range.addEventListener('input', () => {
     const v = Number(range.value);
@@ -1785,6 +1868,8 @@ subscribe(() => {
   // refresh side panel if visible (backlinks/outgoing links may change)
   const sp = document.getElementById('sidePanel');
   if (sp && sp.classList.contains('open')) renderSidePanel();
+  // 🐱 kediyi kuyruğuyla selamla
+  catAutoWiggle();
 });
 
 function openTasksModal() {
@@ -1858,6 +1943,7 @@ function openTasksModal() {
         }
         await updateNote(note.id, { content: lines.join('\n') });
         render();
+        catPoke('happy');
       });
       if (t.state !== 'checkbox') {
         const chip = document.createElement('span');

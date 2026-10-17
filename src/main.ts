@@ -10,7 +10,7 @@ import { initWhisperLocal, transcribeBlob, whisperReadyFor, whisperCached, whisp
 
 let saveTimer: any = null;
 let propsTimer: any = null;
-let suggestState: { triggerStart: number; items: { label: string; insert: string }[]; index: number; type: 'wiki' | 'tag' } | null = null;
+let suggestState: { triggerStart: number; items: { label: string; insert: string }[]; index: number; type: 'wiki' | 'tag' | 'slash' } | null = null;
 let groupByFolder = false;
 let lastViewedId: string | null = null;
 let recentNoteIds: string[] = [];
@@ -1682,19 +1682,60 @@ function acceptSuggestion() {
   const item = suggestState.items[suggestState.index];
   const before = ta.value.slice(0, suggestState.triggerStart);
   const after = ta.value.slice(ta.selectionStart);
-  const insertion = suggestState.type === 'wiki' ? `[[${item.insert}]] ` : `#${item.insert} `;
+  const insertion = suggestState.type === 'wiki' ? `[[${item.insert}]] `
+    : suggestState.type === 'tag' ? `#${item.insert} `
+    : item.insert;
   ta.value = before + insertion + after;
   const newPos = before.length + insertion.length;
   ta.selectionStart = ta.selectionEnd = newPos;
   hideSuggestions();
   ta.dispatchEvent(new Event('input'));
 }
+// Slash (/) menü Itemsları: line başında / yazınca hızlı şablon ekleme
+const SLASH_ITEMS: { label: string; keywords: string; insert: string }[] = [
+  { label: 'H1  Başlık', keywords: 'h1 başlık balik heading', insert: '# ' },
+  { label: 'H2  Alt başlık', keywords: 'h2 alt başlık subtitle heading', insert: '## ' },
+  { label: 'H3  Küçük başlık', keywords: 'h3 küçük heading', insert: '### ' },
+  { label: '☐  Görev işareti', keywords: 'görev task checkbox todo', insert: '- [ ] ' },
+  { label: '⏰  NOW görev', keywords: 'now doing gorul ongoing', insert: '- NOW ' },
+  { label: '•  Madde işareti', keywords: 'madde bullet liste list item', insert: '- ' },
+  { label: '1.  Numaralı liste', keywords: 'numaralı ordered list liste', insert: '1. ' },
+  { label: '❝  Alıntı', keywords: 'alıntı quote blockquote', insert: '> ' },
+  { label: 'ℹ️  Bilgi callout', keywords: 'callout bilgi info not', insert: '> [!info] Başlık\n> içerik\n' },
+  { label: '⚠️  Uyarı callout', keywords: 'callout uyarı warning dikkat', insert: '> [!warning] Başlık\n> içerik\n' },
+  { label: '☑️  Başarım callout', keywords: 'callout başarım success', insert: '> [!success] Başlık\n> içerik\n' },
+  { label: '▦  Tablo (3×3)', keywords: 'tablo table grid', insert: '| A | B | C |\n|---|---|---|\n|  |  |  |\n|  |  |  |\n' },
+  { label: '`  Kod bloğu', keywords: 'kod code block blok', insert: '```\n\n```\n' },
+  { label: '⬡  Mermaid diyagram', keywords: 'mermaid diyagram diagram grafik chart', insert: '```mermaid\nflowchart LR\n  A --> B\n```\n' },
+  { label: '∑  Matematik bloğu', keywords: 'matematik math latex kaTeX', insert: '$$\n\n$$\n' },
+  { label: '—  Ayıraç', keywords: 'ayıraç divider hr çizgi', insert: '---\n' },
+  { label: '📅  Bugünün tarihi', keywords: 'tarih date bugün today', insert: '' },
+];
+
+function slashItems(filter: string) {
+  const q = filter.trim().toLowerCase();
+  const list = SLASH_ITEMS.filter((it) => !q || it.label.toLowerCase().includes(q) || it.keywords.includes(q));
+  const today = new Date().toISOString().slice(0, 10);
+  return list.slice(0, 10).map((it) => ({ label: it.label, insert: it.keywords.includes('today') || it.keywords.includes('bugün') ? today : it.insert }));
+}
+
 function updateSuggestions() {
   const ta = document.getElementById('editorTextarea') as HTMLTextAreaElement;
   if (!ta) return;
   const pos = ta.selectionStart;
   const before = ta.value.slice(0, pos);
-  let m = before.match(/\[\[([^\]]*)$/);
+  // slash (/) menüsü: satır başında "/" + filtre
+  let m = before.match(/(^|\n)([ \t]*)\/([\wçğıöşü-]*)$/i);
+  if (m) {
+    const filter = m[3];
+    const triggerStart = pos - 1 - filter.length;
+    const items = slashItems(filter);
+    if (items.length) {
+      showSuggest(items, triggerStart, 'slash');
+      return;
+    }
+  }
+  m = before.match(/\[\[([^\]]*)$/);
   if (m) {
     const prefix = m[1];
     const triggerStart = pos - m[0].length;
@@ -1726,7 +1767,7 @@ function updateSuggestions() {
   }
   hideSuggestions();
 }
-function showSuggest(items: { label: string; insert: string }[], triggerStart: number, type: 'wiki' | 'tag') {
+function showSuggest(items: { label: string; insert: string }[], triggerStart: number, type: 'wiki' | 'tag' | 'slash') {
   suggestState = { triggerStart, items, index: 0, type };
   const box = document.getElementById('suggestBox')!;
   box.innerHTML = '';

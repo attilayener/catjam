@@ -88,6 +88,7 @@ let saveTimer: any = null;
 let propsTimer: any = null;
 let suggestState: { triggerStart: number; items: { label: string; insert: string }[]; index: number; type: 'wiki' | 'tag' | 'slash' } | null = null;
 let groupByFolder = false;
+let selectedFolder: string | null = null; // tıklanmış klasör odakları (⭐ favoriler için sentinel)
 let lastViewedId: string | null = null;
 let recentNoteIds: string[] = [];
 let favorites: string[] = [];
@@ -369,6 +370,7 @@ function bindEvents() {
     if (!name) return;
     addExtraFolder(name);
     if (!groupByFolder) groupByFolder = true;
+    selectedFolder = name; // oluşturulan klasöre odaklan
     renderNoteList();
   });
   document.getElementById('btnTemplates')!.addEventListener('click', () => openTemplatesModal());
@@ -719,7 +721,15 @@ function toggleSidePanel() {
 }
 
 function newNoteAndRender() {
-  createNote().then(() => { renderAll(); saveTimer = null; });
+  createNote().then((n) => {
+    if (selectedFolder && selectedFolder !== '⭐') {
+      // odaklı klasör varsa not o klasörde doğsun
+      updateNote(n!.id, { folder: selectedFolder }).then(() => { renderAll(); saveTimer = null; });
+      return;
+    }
+    renderAll();
+    saveTimer = null;
+  });
   toggleSidebar(false);
 }
 function dailyNote() {
@@ -942,32 +952,67 @@ function renderNoteList() {
 
   if (groupByFolder) {
     const favs = favorites.map((id) => getState().notes.find((n) => n.id === id)).filter(Boolean) as any[];
-    if (favs.length && !q) {
-      const fh = document.createElement('div');
-      fh.className = 'folder-header';
-      fh.textContent = '⭐ ' + t('favorites');
-      attachFolderDrop(fh, '');
-      list.appendChild(fh);
-      for (const n of favs) renderOne(n);
-      const sep = document.createElement('div');
-      sep.style.height = '6px';
-      list.appendChild(sep);
-    }
+    const FAV = '⭐'; // favoriler grubu için sentinel (gerçek klasör adlarıyla çakışmaz)
     const groups = new Map<string, any[]>();
+    if (favs.length && !q) groups.set(FAV, favs.slice());
     for (const n of notes) {
       const key = n.folder || '';
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(n);
     }
     for (const f of extraFolders()) if (!groups.has(f)) groups.set(f, []);
-    const keys = [...groups.keys()].sort((a, b) => String(a).localeCompare(String(b)));
-    for (const key of keys) {
+    if (selectedFolder !== null && selectedFolder !== FAV && !groups.has(selectedFolder)) groups.set(selectedFolder, []);
+    if (selectedFolder !== null && !groups.has(selectedFolder)) selectedFolder = null;
+    const keys = [...groups.keys()].sort((a, b) => {
+      if (a === FAV) return -1;
+      if (b === FAV) return 1;
+      return String(a).localeCompare(String(b));
+    });
+
+    const renderHeader = (key: string) => {
+      const active = selectedFolder === key;
       const fh = document.createElement('div');
-      fh.className = 'folder-header';
-      fh.textContent = key ? '📁 ' + key : t('folderLabel') + ' —';
-      attachFolderDrop(fh, key);
+      fh.className = 'folder-header' + (active ? ' selected' : '');
+      fh.title = active ? t('folderShowAll') : t('folderOnClick');
+      fh.textContent = key === FAV ? '⭐ ' + t('favorites') : (key ? '📁 ' + key : '📄 ' + t('folderRoot'));
+      attachFolderDrop(fh, key === FAV ? '' : key);
+      fh.addEventListener('click', () => {
+        selectedFolder = selectedFolder === key ? null : key;
+        renderNoteList();
+      });
+      if (active) {
+        const x = document.createElement('span');
+        x.className = 'folder-clear';
+        x.textContent = '✕';
+        x.title = t('folderShowAll');
+        x.addEventListener('click', (e) => { e.stopPropagation(); selectedFolder = null; renderNoteList(); });
+        fh.appendChild(x);
+      }
       list.appendChild(fh);
-      for (const n of groups.get(key)!) renderOne(n);
+    };
+
+    if (selectedFolder !== null) {
+      for (const key of keys) {
+        if (key !== selectedFolder) continue;
+        renderHeader(key);
+        for (const n of groups.get(key)!) renderOne(n);
+        if (!groups.get(key)!.length) {
+          const h = document.createElement('div');
+          h.className = 'empty-hint';
+          h.textContent = t('folderEmpty');
+          list.appendChild(h);
+        }
+      }
+    } else {
+      for (const key of keys) {
+        renderHeader(key);
+        for (const n of groups.get(key)!) renderOne(n);
+        if (key === FAV) {
+          const sep = document.createElement('div');
+          sep.style.height = '6px';
+          list.appendChild(sep);
+        }
+      }
     }
   } else {
     for (const n of notes) renderOne(n);

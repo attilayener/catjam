@@ -197,8 +197,10 @@ function buildShell() {
       <input class="search-input" id="searchInput" placeholder="${t('searchPlaceholder')}" />
       <button class="iconbtn" id="btnGroupFolders" title="${t('treeBtn')}">🌳</button>
       <button class="iconbtn" id="btnFoldersNew" title="${t('folderNew')}">＋📁</button>
+      <button class="iconbtn" id="btnMultiSelect" title="${t('multiSelect')}">☑</button>
     </div>
     <div class="note-list" id="noteList"></div>
+    <div class="sel-bar" id="selBar" style="display:none;"></div>
     <div class="sidebar-foot">
       <div class="sb-group" data-grp="notes">
         <button class="sb-gh" type="button"><span>📝</span>${t('grpNotes')}<span class="sb-caret">▾</span></button>
@@ -428,6 +430,7 @@ function bindEvents() {
     if (!groupByFolder) groupByFolder = true;
     renderNoteList(); // tüm grup listesi görünür kalır; yeni klasör kendi sırasında
   });
+  document.getElementById('btnMultiSelect')!.addEventListener('click', () => setMultiSelectMode(!multiSelectMode));
   document.getElementById('btnTemplates')!.addEventListener('click', () => openTemplatesModal());
   document.getElementById('btnFocus')!.addEventListener('click', () => document.body.classList.toggle('focus-mode'));
   document.getElementById('exitFocus')!.addEventListener('click', () => document.body.classList.remove('focus-mode'));
@@ -1054,18 +1057,78 @@ function addExtraFolder(f: string) {
   }
 }
 
+// ---- ☑ Çoklu seçim modu ----
+let multiSelectMode = false;
+const selectedIds = new Set<string>();
+
+function setMultiSelectMode(on: boolean) {
+  multiSelectMode = on;
+  if (!on) selectedIds.clear();
+  (document.getElementById('btnMultiSelect') as HTMLButtonElement | null)?.classList.toggle('active', on);
+  updateSelBar();
+  renderNoteList();
+}
+
+function updateSelBar() {
+  const bar = document.getElementById('selBar');
+  if (!bar) return;
+  if (!multiSelectMode) { bar.style.display = 'none'; return; }
+  bar.style.display = '';
+  bar.innerHTML = `<span class="sel-count">${selectedIds.size}</span>` +
+    `<button id="selMove" class="sel-act" title="${t('folderNew')}">📁</button>` +
+    `<button id="selTag" class="sel-act" title="${t('selTagHint')}">#</button>` +
+    `<button id="selTrash" class="sel-act" title="${t('deleteNote')}">🗑</button>` +
+    `<button id="selDone" class="sel-act" title="${t('close')}">✕</button>`;
+  const q = <HTMLButtonElement>(id: string) => bar.querySelector('#' + id) as HTMLButtonElement;
+  for (const b of ['selMove', 'selTag', 'selTrash']) { const btn = q(b); if (btn) btn.disabled = !selectedIds.size; }
+  q('selMove')?.addEventListener('click', async () => {
+    if (!selectedIds.size) return;
+    const f = prompt(t('folderNew'));
+    if (f === null) return;
+    const val = f.trim();
+    for (const id of [...selectedIds]) {
+      const n = getState().notes.find((x) => x.id === id);
+      if (!n || n.locked) continue;
+      await updateNote(id, { folder: val || undefined });
+    }
+    selectedIds.clear();
+    renderAll();
+  });
+  q('selTag')?.addEventListener('click', async () => {
+    if (!selectedIds.size) return;
+    const tag = prompt(t('selTagHint'));
+    if (!tag) return;
+    const clean = tag.trim().replace(/^#+/, '');
+    if (!clean) return;
+    for (const id of [...selectedIds]) {
+      const n = getState().notes.find((x) => x.id === id);
+      if (!n || n.locked) continue;
+      if (n.content.includes('#' + clean)) continue;
+      await updateNote(id, { content: n.content + (n.content.endsWith('\n') ? '' : '\n') + '#' + clean + '\n' });
+    }
+    selectedIds.clear();
+    renderAll();
+  });
+  q('selTrash')?.addEventListener('click', async () => {
+    if (!selectedIds.size || !confirm(t('selTrashConfirm'))) return;
+    for (const id of [...selectedIds]) await deleteNote(id);
+    selectedIds.clear();
+    renderAll();
+  });
+  q('selDone')?.addEventListener('click', () => setMultiSelectMode(false));
+}
+
 function renderNoteList() {
   saveFolderViewState();
   const list = document.getElementById('noteList')!;
-  list.innerHTML = '';
-  const notes = filteredNotes();
+  list.innerHTML = '';  const notes = filteredNotes();
   if (!notes.length) {
     const h = document.createElement('div'); h.className = 'empty-hint'; h.textContent = getState().search ? t('emptyNoMatch') : t('emptyNoNotes'); list.appendChild(h); return;
   }
   const q = (getState().search || '').trim().toLowerCase();
   const renderOne = (n: any, indent = 0, opts?: { compact?: boolean; allowReorder?: boolean }) => {
     const item = document.createElement('div');
-    item.className = 'note-item' + (n.id === getState().activeId ? ' active' : '');
+    item.className = 'note-item' + (n.id === getState().activeId ? ' active' : '') + (multiSelectMode && selectedIds.has(n.id) ? ' selected' : '');
     if (indent > 0) item.style.paddingLeft = (10 + indent) + 'px';
     item.draggable = true;
     item.dataset.noteId = n.id;
@@ -1083,11 +1146,19 @@ function renderNoteList() {
       }
     }
     item.innerHTML = opts?.compact
-      ? `<div class="title">${escapeHtml(n.title)}${n.locked ? ' 🔒' : ''}</div><button class="note-del" title="${t('deleteNote')}" aria-label="${t('deleteNote')}">✕</button>`
-      : `<div class="title">${escapeHtml(n.title)}${n.locked ? ' 🔒' : ''}</div>${snippetHtml || `<div class="meta">${date}</div>`}
+      ? `<div class="title">${multiSelectMode ? `<input type="checkbox" class="sel-cb" ${selectedIds.has(n.id) ? 'checked' : ''} />` : ''}${escapeHtml(n.title)}${n.locked ? ' 🔒' : ''}</div><button class="note-del" title="${t('deleteNote')}" aria-label="${t('deleteNote')}">✕</button>`
+      : `<div class="title">${multiSelectMode ? `<input type="checkbox" class="sel-cb" ${selectedIds.has(n.id) ? 'checked' : ''} />` : ''}${escapeHtml(n.title)}${n.locked ? ' 🔒' : ''}</div>${snippetHtml || `<div class="meta">${date}</div>`}
       <button class="note-del" title="${t('deleteNote')}" aria-label="${t('deleteNote')}">✕</button>`;
     item.addEventListener('click', (e) => {
       const btn = (e.target as HTMLElement).closest('.note-del'); if (btn) return;
+      if (multiSelectMode) {
+        if (selectedIds.has(n.id)) selectedIds.delete(n.id); else selectedIds.add(n.id);
+        item.classList.toggle('selected', selectedIds.has(n.id));
+        const cb = item.querySelector('.sel-cb') as HTMLInputElement | null;
+        if (cb) cb.checked = selectedIds.has(n.id);
+        updateSelBar();
+        return;
+      }
       setActive(n.id); renderAll(); toggleSidebar(false);
     });
     const delBtn = item.querySelector('.note-del') as HTMLButtonElement;

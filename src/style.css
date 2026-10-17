@@ -212,6 +212,30 @@ body.focus-mode #catMascot { display: none; }
   border-radius: 3px; padding: 0 2px;
 }
 .ver-diff-on { border-color: var(--accent) !important; background: var(--accent-soft) !important; }
+
+/* istatistik panosu */
+.stat-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: var(--bg-soft); border: 1px solid var(--border);
+  border-radius: 10px; padding: 6px 11px; font-size: 13px; color: var(--text);
+}
+.stat-chip b { color: var(--text-h); }
+.heat-grid {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(7, 13px);
+  grid-auto-columns: 13px;
+  gap: 3px;
+}
+.heat-cell {
+  width: 13px; height: 13px; border-radius: 3px; display: inline-block;
+}
+.heat-cell.h0 { background: var(--bg-soft); border: 1px solid var(--border); }
+.heat-cell.h1 { background: color-mix(in srgb, var(--accent) 25%, transparent); }
+.heat-cell.h2 { background: color-mix(in srgb, var(--accent) 50%, transparent); }
+.heat-cell.h3 { background: color-mix(in srgb, var(--accent) 75%, transparent); }
+.heat-cell.h4 { background: var(--accent); }
+.heat-cell.future { background: transparent; border: none; }
 @keyframes catTail { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-14deg); } }
 @keyframes catTailFast { 0%, 100% { transform: rotate(0deg); } 25% { transform: rotate(18deg); } 75% { transform: rotate(-20deg); } }
 @keyframes catBounce { 0%, 100% { transform: translateY(0); } 35% { transform: translateY(-7px); } 65% { transform: translateY(0); } }

@@ -185,6 +185,7 @@ function buildShell() {
       <button class="iconbtn" id="btnTrash" title="${t('trash')}">🗑 ${t('trash')}</button>
       <button class="iconbtn" id="btnShareHtml" title="${t('shareHtml')}">🌐 ${t('shareHtml')}</button>
       <button class="iconbtn" id="btnWeekly" title="${t('weeklyReport')}">📊 ${t('weeklyReport')}</button>
+      <button class="iconbtn" id="btnStats" title="${t('statsTitle')}">📈 ${t('statsTitle')}</button>
     </div>
   `;
 
@@ -334,6 +335,7 @@ function bindEvents() {
   document.getElementById('btnTrash')!.addEventListener('click', () => openTrashModal());
   document.getElementById('btnShareHtml')!.addEventListener('click', () => { void exportCurrentNoteHtml(); });
   document.getElementById('btnWeekly')!.addEventListener('click', () => { void openWeeklyReport(); });
+  document.getElementById('btnStats')!.addEventListener('click', () => openStatsModal());
   document.getElementById('btnBacklinks')!.addEventListener('click', () => toggleSidePanel());
   document.getElementById('closeSidePanel')!.addEventListener('click', () => toggleSidePanel());
   document.getElementById('btnGraph')!.addEventListener('click', () => showGraph());
@@ -948,7 +950,7 @@ function escapeHtml(s: string) {
 function countWords(s: string): number {
   return s.trim() ? s.trim().split(/\s+/).length : 0;
 }
-function todayKey(): string { return new Date().toISOString().slice(0, 10); }
+function todayKey(): string { return isoDayKey(new Date()); }
 function dayWords(): Record<string, number> {
   try { return JSON.parse(localStorage.getItem('catjam:daywords') || '{}'); } catch { return {}; }
 }
@@ -976,7 +978,7 @@ function maybeCelebrateGoal() {
   localStorage.setItem('catjam:goaltoday', todayKey());
   const pct = Math.round((words / dailyGoal()) * 100);
   catSay(isTr()
-    ? `Bugün ${words} kelime — hedef %{${pct}} tamam! 🎉 Miyav!`
+    ? `Bugün ${words} kelime — hedef %${pct} tamam! 🎉 Miyav!`
     : `${words} words today — goal ${pct}% done! 🎉 Meow!`, 5200);
   catPoke('happy');
 }
@@ -1112,6 +1114,114 @@ function toggleAmbientPopover() {
     };
     document.addEventListener('click', off);
   }, 0);
+}
+
+// ---- 📊 İstatistik panosu ----
+function openStatsModal() {
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop';
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.style.maxWidth = '720px';
+  modal.style.width = 'min(720px, 94vw)';
+  const dw = dayWords();
+  const now = Date.now();
+
+  // --- hesaplar
+  const notes = getState().notes.filter((x) => !x.deletedAt);
+  const totalWords = notes.reduce((sum, x) => sum + countWords(x.content), 0);
+  const today = dw[todayKey()] || 0;
+  // 7 gün
+  let weekWords = 0;
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(now - i * 86400000);
+    weekWords += dw[isoDayKey(d)] || 0;
+  }
+  // seri: bugün > 0 → bugünden geriye; yoksa dünden geriye
+  let streak = 0;
+  for (let i = 0; i < 400; i++) {
+    const d = new Date(now - i * 86400000);
+    const active = (dw[isoDayKey(d)] || 0) > 0;
+    if (active) streak++;
+    else if (i === 0) continue; // bugün henüz boş olabilir — dünden bak
+    else break;
+  }
+  // ısı haritası verisi: 26 hafta × 7 gün (sütun-major: dikey 7 günlük blok)
+  const cells: { key: string; words: number }[] = [];
+  const gridStart = new Date(now - (26 * 7 - 1) * 86400000); // son 182 gün
+  for (let i = 0; i < 26 * 7; i++) {
+    const d = new Date(gridStart.getTime() + i * 86400000);
+    if (d.getTime() > now) { cells.push({ key: '', words: -1 }); continue; }
+    const key = isoDayKey(d);
+    cells.push({ key, words: dw[key] || 0 });
+  }
+  const goal = dailyGoal();
+  const lvlOf = (w: number) => (w <= 0 ? 0 : w < goal * 0.4 ? 1 : w < goal * 0.8 ? 2 : w < goal ? 3 : 4);
+
+  // --- çipler
+  modal.innerHTML = `
+    <h3>📈 ${t('statsTitle')}</h3>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+      <div class="stat-chip">🔥 ${t('statsStreak')}: <b>${streak}${t('statsDayUnit')}</b></div>
+      <div class="stat-chip">✍️ ${t('statsToday')}: <b>${today}</b> / ${goal} ${t('statsWordsUnit')}</div>
+      <div class="stat-chip">🗓 ${t('statsWeekWords')}: <b>${weekWords}</b></div>
+      <div class="stat-chip">📦 ${t('statsVersion')}: <b>${totalWords}</b></div>
+      <div class="stat-chip">🗂 ${t('statsNotes')}: <b>${notes.length}</b></div>
+    </div>
+    <div style="font-size:13px;color:var(--text-muted);margin-bottom:6px;">🔥 Isı haritası (26 hafta)</div>
+    <div style="overflow-x:auto;padding-bottom:6px;">
+      <div id="heatGrid" class="heat-grid"></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;margin:10px 0 4px;font-size:11px;color:var(--text-muted);">
+      <span style="margin-left:auto;"></span> az
+      <span class="heat-cell h0"></span><span class="heat-cell h1"></span><span class="heat-cell h2"></span><span class="heat-cell h3"></span><span class="heat-cell h4"></span>
+      çok
+    </div>
+    <div style="margin-top:14px;">
+      <div style="font-size:13px;color:var(--text-muted);margin-bottom:6px;">🎯 ${t('statsGoal')}: <span id="goalLabel">${goal}</span> ${t('statsWordsUnit')}</div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <input type="range" id="goalRange" min="100" max="2000" step="50" value="${goal}" style="flex:1;" />
+        <div style="width:180px;height:8px;border-radius:6px;background:var(--bg-soft);border:1px solid var(--border);overflow:hidden;">
+          <div id="goalBar" style="height:100%;width:${Math.min(100, Math.round((today / goal) * 100))}%;background:var(--accent);"></div>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-top:14px;">
+      <button class="iconbtn" id="statsClose" style="width:auto;padding:5px 14px;font-size:13px;">${t('close')}</button>
+    </div>`;
+
+  // ısı hücreleri
+  const grid = modal.querySelector('#heatGrid') as HTMLDivElement;
+  for (const c of cells) {
+    const cell = document.createElement('span');
+    if (c.words < 0) { cell.className = 'heat-cell future'; grid.appendChild(cell); continue; }
+    cell.className = 'heat-cell h' + lvlOf(c.words);
+    const when = new Date(c.key + 'T00:00:00').toLocaleDateString();
+    cell.title = `${when} — ${c.words} ${t('statsWordsUnit')}`;
+    grid.appendChild(cell);
+  }
+  // hedef kaydırıcı
+  const range = modal.querySelector('#goalRange') as HTMLInputElement;
+  range.addEventListener('input', () => {
+    const v = Number(range.value);
+    localStorage.setItem('catjam:goal', String(v));
+    (modal.querySelector('#goalLabel') as HTMLSpanElement).textContent = String(v);
+    const todayNow = dayWords()[todayKey()] || 0;
+    (modal.querySelector('#goalBar') as HTMLDivElement).style.width = Math.min(100, Math.round((todayNow / v) * 100)) + '%';
+  });
+  (modal.querySelector('#statsClose') as HTMLButtonElement).addEventListener('click', () => backdrop.remove());
+  backdrop.appendChild(modal);
+  document.body.appendChild(backdrop);
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+  // hedef kutlamasını da kontrol et (bugün doldurmuşsa kedi selam verir)
+  setTimeout(() => {
+    const words = dayWords()[todayKey()] || 0;
+    if (words >= dailyGoal() && localStorage.getItem('catjam:goaltoday') !== todayKey()) maybeCelebrateGoal();
+  }, 350);
+}
+function isoDayKey(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
 // ---- Tek dosya HTML paylaşımı ----

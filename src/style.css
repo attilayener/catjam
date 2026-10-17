@@ -212,6 +212,39 @@ body.focus-mode #catMascot { display: none; }
 }
 .ver-diff-on { border-color: var(--accent) !important; background: var(--accent-soft) !important; }
 
+/* ▦ Kanban panosu */
+.kan-board {
+  display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px;
+  align-items: stretch;
+}
+.kan-col {
+  flex: 1; min-width: 205px; max-width: 280px;
+  background: var(--bg-soft); border: 1px solid var(--border); border-radius: 12px;
+  padding: 10px; transition: background .15s ease, border-color .15s ease;
+}
+.kan-col.drag-over { border-color: var(--kan-col); background: color-mix(in srgb, var(--kan-col) 10%, var(--bg-soft)); }
+.kan-col-h {
+  display: flex; align-items: center; gap: 6px; margin-bottom: 8px;
+  font-size: 13px; font-weight: 600; color: var(--text-h);
+}
+.kan-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--kan-col); display: inline-block; }
+.kan-count { color: var(--text-muted); font-size: 11.5px; font-weight: 400; margin-left: auto; }
+.kan-stack { display: flex; flex-direction: column; gap: 6px; min-height: 60px; }
+.kan-card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  padding: 8px 9px; cursor: grab; display: flex; flex-direction: column; gap: 3px;
+}
+.kan-card:hover { border-color: var(--kan-col); }
+.kan-card.dragging { opacity: .45; }
+.kan-title { font-size: 13px; font-weight: 600; color: var(--text-h); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kan-title:hover { color: var(--accent); text-decoration: underline; }
+.kan-snip { font-size: 11.5px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kan-move {
+  width: 100%; margin-top: 2px; background: var(--bg-soft); color: var(--text);
+  border: 1px solid var(--border); border-radius: 7px; font-size: 11.5px; padding: 3px 6px; cursor: pointer;
+}
+.kan-empty { color: var(--text-muted); font-size: 12px; text-align: center; padding: 10px 0; }
+
 /* istatistik panosu */
 .stat-chip {
   display: inline-flex; align-items: center; gap: 5px;

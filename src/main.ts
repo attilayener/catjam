@@ -1,6 +1,7 @@
 import './style.css';
 import katexCss from 'katex/dist/katex.min.css?inline';
 import { initStore, getState, subscribe, createNote, updateNote, deleteNote, restoreNote, deletedNotes, setActive, setSearch, setTheme, setEditorMode, getActiveNote, backlinksOf, findNoteByTitle, filteredNotes, openVault, setLanguage, reorderNotes } from './store';
+import type { Note } from './types';
 import { renderMarkdown, extractWikiLinks, extractTags } from './markdown';
 import { THEMES } from './themes';
 import { saveSetting, db } from './db';
@@ -141,6 +142,7 @@ function buildShell() {
     <button class="iconbtn" id="btnGraph" title="${t('graph')}">⬢</button>
     <button class="iconbtn" id="btnPalette" title="${t('palette')}">⌘</button>
     <button class="iconbtn" id="btnTasks" title="${t('tasks')}">☑</button>
+    <button class="iconbtn" id="btnKanban" title="${t('kanban')}">▦</button>
     <button class="iconbtn" id="btnTags" title="${t('tags')}">#</button>
     <button class="iconbtn" id="btnTemplates" title="Templates">📋</button>
     <button class="iconbtn" id="btnFocus" title="Focus mode">🎯</button>
@@ -341,6 +343,7 @@ function bindEvents() {
   document.getElementById('btnGraph')!.addEventListener('click', () => showGraph());
   document.getElementById('btnPalette')!.addEventListener('click', () => openCommandPalette());
   document.getElementById('btnTasks')!.addEventListener('click', () => openTasksModal());
+  document.getElementById('btnKanban')!.addEventListener('click', () => openKanbanModal());
   document.getElementById('btnTags')!.addEventListener('click', () => openTagsModal());
   document.getElementById('btnGroupFolders')!.addEventListener('click', () => { groupByFolder = !groupByFolder; renderNoteList(); });
   document.getElementById('btnTemplates')!.addEventListener('click', () => openTemplatesModal());
@@ -2075,6 +2078,156 @@ subscribe(() => {
   // 🐱 kediyi kuyruğuyla selamla
   catAutoWiggle();
 });
+
+// ---- ▦ Kanban panosu ----
+function noteStatusKey(note: Note): string {
+  const { meta, body } = parseFrontMatter(note.content);
+  let raw = '';
+  if (meta.status && typeof meta.status === 'string') raw = meta.status;
+  else {
+    const m = body.match(/^\s*status::\s*([\wçğıöşü-]+)\s*$/im);
+    if (m) raw = m[1];
+  }
+  raw = raw.trim().toLowerCase();
+  if (!raw) return '';
+  if (['todo', 'later', 'yapılacak', 'yapilacak'].includes(raw)) return 'todo';
+  if (['doing', 'now', 'yapılıyor', 'yapiliyor'].includes(raw)) return 'doing';
+  if (['done', 'tamam', 'bitti'].includes(raw)) return 'done';
+  return raw; // özel değer → kendi sütunu
+}
+
+async function setNoteStatus(id: string, col: string) {
+  const note = getState().notes.find((n) => n.id === id);
+  if (!note) return;
+  const { meta, body } = parseFrontMatter(note.content);
+  meta.status = col;
+  const cleaned = body.split('\n').filter((l) => !/^\s*status::/.test(l)).join('\n');
+  await updateNote(id, { content: serializeFrontMatter(meta) + cleaned });
+}
+
+function openKanbanModal() {
+  const notes = getState().notes.filter((n) => !n.deletedAt && !n.locked);
+  const buckets = new Map<string, Note[]>();
+  for (const n of notes) {
+    const key = noteStatusKey(n);
+    if (!key) continue;
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key)!.push(n);
+  }
+  const baseCols: { key: string; label: string; color: string }[] = [
+    { key: 'todo', label: t('colTodo'), color: '#94a3b8' },
+    { key: 'doing', label: t('colDoing'), color: '#3b82f6' },
+    { key: 'done', label: t('colDone'), color: '#22c55e' },
+  ];
+  for (const key of buckets.keys()) {
+    if (!baseCols.some((c) => c.key === key)) baseCols.push({ key, label: key, color: '#8b5cf6' });
+  }
+
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop';
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.style.maxWidth = '900px';
+  modal.style.width = 'min(900px, 96vw)';
+  modal.innerHTML = `<h3>▦ ${t('kanban')}</h3>`;
+  const hint = document.createElement('div');
+  hint.style.cssText = 'font-size:11.5px;color:var(--text-muted);margin-bottom:10px;line-height:1.5;';
+  hint.textContent = t('kanbanHint');
+  modal.appendChild(hint);
+  const board = document.createElement('div');
+  board.className = 'kan-board';
+  modal.appendChild(board);
+
+  for (const col of baseCols) {
+    const colEl = document.createElement('div');
+    colEl.className = 'kan-col';
+    colEl.style.setProperty('--kan-col', col.color);
+    const list = buckets.get(col.key) || [];
+    colEl.innerHTML = `<div class="kan-col-h"><span class="kan-dot"></span>${escapeHtml(col.label)} <span class="kan-count">${list.length}</span></div>`;
+    const stack = document.createElement('div');
+    stack.className = 'kan-stack';
+    for (const n of list) {
+      const card = document.createElement('div');
+      card.className = 'kan-card';
+      card.draggable = true;
+      card.dataset.id = n.id;
+      const title = document.createElement('div');
+      title.className = 'kan-title';
+      title.textContent = n.title || 'Untitled';
+      const snip = document.createElement('div');
+      snip.className = 'kan-snip';
+      const plain = n.content.replace(/^---[\s\S]*?---\n?/, '').replace(/[#>`~[\]!*_=-]/g, ' ').trim();
+      snip.textContent = plain.slice(0, 90) || '—';
+      title.addEventListener('click', () => {
+        setActive(n.id);
+        renderAll();
+        backdrop.remove();
+      });
+      // mobil/dokunmatik kolay taşıma: seçici
+      const sel = document.createElement('select');
+      sel.className = 'kan-move';
+      for (const c of baseCols.map((x) => x.key)) {
+        const o = document.createElement('option');
+        o.value = c;
+        o.textContent = baseCols.find((x) => x.key === c)!.label;
+        if (c === col.key) o.selected = true;
+        sel.appendChild(o);
+      }
+      sel.addEventListener('click', (e) => e.stopPropagation());
+      sel.addEventListener('change', async () => {
+        await setNoteStatus(n.id, sel.value);
+        modal.remove();
+        openKanbanModal(); // taze board
+      });
+      card.appendChild(title);
+      card.appendChild(snip);
+      card.appendChild(sel);
+      card.addEventListener('dragstart', (e) => {
+        e.dataTransfer?.setData('text/catjam-note', n.id);
+        card.classList.add('dragging');
+      });
+      card.addEventListener('dragend', () => card.classList.remove('dragging'));
+      stack.appendChild(card);
+    }
+    if (!list.length) {
+      const empty = document.createElement('div');
+      empty.className = 'kan-empty';
+      empty.textContent = '—';
+      stack.appendChild(empty);
+    }
+    colEl.appendChild(stack);
+    colEl.addEventListener('dragover', (e) => { e.preventDefault(); colEl.classList.add('drag-over'); });
+    colEl.addEventListener('dragleave', () => colEl.classList.remove('drag-over'));
+    colEl.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      colEl.classList.remove('drag-over');
+      const id = e.dataTransfer?.getData('text/catjam-note');
+      if (!id) return;
+      await setNoteStatus(id, col.key);
+      modal.remove();
+      openKanbanModal();
+    });
+    board.appendChild(colEl);
+  }
+  if (!notes.some((n) => noteStatusKey(n))) {
+    const empty = document.createElement('div');
+    empty.style.cssText = 'font-size:13px;color:var(--text-muted);margin-top:10px;';
+    empty.textContent = t('kanbanHint');
+    modal.appendChild(empty);
+  }
+  const footer = document.createElement('div');
+  footer.style.cssText = 'display:flex;justify-content:flex-end;margin-top:12px;';
+  const close = document.createElement('button');
+  close.className = 'iconbtn';
+  close.style.cssText = 'width:auto;padding:4px 14px;';
+  close.textContent = t('close');
+  close.addEventListener('click', () => backdrop.remove());
+  footer.appendChild(close);
+  modal.appendChild(footer);
+  backdrop.appendChild(modal);
+  document.body.appendChild(backdrop);
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+}
 
 function openTasksModal() {
   const backdrop = document.createElement('div');

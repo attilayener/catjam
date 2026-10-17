@@ -196,6 +196,7 @@ function buildShell() {
   const main = document.createElement('div');
   main.className = 'main';
   main.innerHTML = `
+    <div class="tab-strip" id="tabStrip"></div>
     <div class="editor-header" id="editorHeader">
       <input class="title-input" id="titleInput" placeholder="${t('untitled')}" />
       <span class="reading-time" id="readingTime"></span>
@@ -1666,9 +1667,63 @@ function renderSidePanel() {
 
 function renderAll() {
   renderNoteList();
+  syncTabs();
   renderEditor();
   updateEditorStatus();
   if (currentView === 'graph') drawGraph();
+}
+
+// ---- 🗂 Sekmeler ----
+let openTabIds: string[] = [];
+try { openTabIds = JSON.parse(localStorage.getItem('catjam:tabs') || '[]'); } catch { openTabIds = []; }
+
+function syncTabs() {
+  const alive = new Set(getState().notes.map((n) => n.id));
+  openTabIds = openTabIds.filter((id) => alive.has(id));
+  const active = getState().activeId;
+  if (active && !openTabIds.includes(active)) openTabIds.push(active);
+  openTabIds = openTabIds.slice(-30);
+  saveTabs();
+  const strip = document.getElementById('tabStrip');
+  if (!strip) return;
+  strip.innerHTML = '';
+  for (const id of openTabIds) {
+    const n = getState().notes.find((x) => x.id === id);
+    if (!n) continue;
+    const tab = document.createElement('div');
+    tab.className = 'cat-tab' + (id === getState().activeId ? ' active' : '');
+    const title = document.createElement('span');
+    title.className = 'tab-title';
+    title.textContent = (n.locked ? '🔒 ' : '') + (n.title || 'Untitled');
+    const close = document.createElement('span');
+    close.className = 'tab-close';
+    close.textContent = '✕';
+    close.title = t('close');
+    close.addEventListener('click', (e) => { e.stopPropagation(); closeTab(id); });
+    tab.addEventListener('click', () => { if (getState().activeId !== id) { setActive(id); renderAll(); } });
+    tab.addEventListener('auxclick', (e) => { if (e.button === 1) closeTab(id); });
+    tab.appendChild(title);
+    tab.appendChild(close);
+    strip.appendChild(tab);
+  }
+  const at = Array.from(strip.querySelectorAll('.cat-tab.active'))[0] as HTMLElement | undefined;
+  if (at) at.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+
+function closeTab(id: string) {
+  const idx = openTabIds.indexOf(id);
+  openTabIds = openTabIds.filter((x) => x !== id);
+  saveTabs();
+  if (getState().activeId === id) {
+    const noteList = getState().notes.filter((n) => !n.deletedAt && !n.locked);
+    const next = openTabIds[Math.max(0, idx - 1)] || noteList[0]?.id || '';
+    if (next) setActive(next);
+  }
+  renderAll();
+}
+
+function saveTabs() {
+  try { localStorage.setItem('catjam:tabs', JSON.stringify(openTabIds)); } catch {}
 }
 
 function showGraph(local = false) {

@@ -87,6 +87,9 @@ const dict: Record<Lang, Record<string, string>> = {
     'writeProfileSans': 'Clean (Sans)',
     'writeProfileSerif': 'Book (Serif)',
     'writeProfileMono': 'Focus (Mono)',
+    'themeEditor': 'Custom theme (CSS)',
+    'themeEditorHint': 'Live CSS. Vars: --bg, --bg-soft, --panel, --border, --accent, --text, --text-muted, --text-h, --code-bg. Class examples: .iconbtn, .callout, .modal, .note-item.',
+    'themeEditorReset': 'Reset',
   },
   tr: {
     'brand': 'Cat Jam',
@@ -174,6 +177,9 @@ const dict: Record<Lang, Record<string, string>> = {
     'writeProfileSans': 'Sade (Sans)',
     'writeProfileSerif': 'Kitap (Serif)',
     'writeProfileMono': 'Odak (Mono)',
+    'themeEditor': 'Özel tema (CSS)',
+    'themeEditorHint': 'Canlı CSS. Değişkenler: --bg, --bg-soft, --panel, --border, --accent, --text, --text-muted, --text-h, --code-bg. Sınıf örnekleri: .iconbtn, .callout, .modal, .note-item.',
+    'themeEditorReset': 'Sıfırla',
   },
 };
 

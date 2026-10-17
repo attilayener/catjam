@@ -18,6 +18,18 @@ let favorites: string[] = [];
 let voiceEngine: 'webspeech' | 'whisper' = 'webspeech';
 let whisperModelKey: 'tiny' | 'base' | 'small' = 'base';
 let editorFontProfile: 'sans' | 'serif' | 'mono' = 'mono';
+let customCss = '';
+
+function applyCustomCss(css: string) {
+  let el = document.getElementById('catjamCustomCss') as HTMLStyleElement | null;
+  if (!el) {
+    el = document.createElement('style');
+    el.id = 'catjamCustomCss';
+    document.head.appendChild(el);
+  }
+  el.textContent = css || '';
+  customCss = css;
+}
 
 function applyEditorFont(profile: 'sans' | 'serif' | 'mono') {
   const fonts: Record<string, string> = {
@@ -1145,6 +1157,14 @@ function openSettings() {
       </select>
     </div>
     <div style="margin-bottom:12px;">
+      <div style="font-size:13px;color:var(--text-muted);margin-bottom:6px;">${t('themeEditor')}</div>
+      <textarea id="customCssInput" class="search-input" rows="8" spellcheck="false" style="width:100%;font-family:var(--mono);font-size:12px;line-height:1.5;resize:vertical;" placeholder=":root { --accent: #ff9900; }"></textarea>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:6px;line-height:1.5;">${t('themeEditorHint')}</div>
+      <div style="display:flex;gap:8px;margin-top:8px;">
+        <button class="iconbtn" id="customCssReset" style="width:auto;padding:5px 12px;font-size:12px;border-color:var(--border);background:var(--bg-soft);">⌫ ${t('themeEditorReset')}</button>
+      </div>
+    </div>
+    <div style="margin-bottom:12px;">
       <div style="font-size:13px;color:var(--text-muted);margin-bottom:6px;">${t('voiceEngine')}</div>
       <select id="voiceEngineSelect" class="search-input" style="width:100%;">
         <option value="webspeech">${t('voiceWebSpeech')}</option>
@@ -1214,6 +1234,18 @@ function openSettings() {
     editorFontProfile = fontSelect.value as 'sans' | 'serif' | 'mono';
     applyEditorFont(editorFontProfile);
     await saveSetting('editorFontProfile', editorFontProfile);
+  });
+  // Özel tema (CSS)
+  const cssInput = modal.querySelector('#customCssInput') as HTMLTextAreaElement;
+  cssInput.value = customCss;
+  cssInput.addEventListener('input', () => {
+    applyCustomCss(cssInput.value);
+    saveSetting('customCss', cssInput.value);
+  });
+  modal.querySelector('#customCssReset')!.addEventListener('click', () => {
+    cssInput.value = '';
+    applyCustomCss('');
+    saveSetting('customCss', '');
   });
   document.documentElement.style.setProperty('--font-size', getState().settings.fontSize + 'px');
   modal.querySelector('#closeSettings')!.addEventListener('click', () => backdrop.remove());
@@ -2060,7 +2092,10 @@ async function main() {
     if (efRow && ['sans', 'serif', 'mono'].includes(efRow.value)) editorFontProfile = efRow.value;
   } catch { /* default */ }
   applyEditorFont(editorFontProfile);
-  // apply settings font size
+  try {
+    const csRow = await db.settings.get('customCss');
+    if (csRow && typeof csRow.value === 'string') applyCustomCss(csRow.value);
+  } catch { /* default */ }
   document.documentElement.style.setProperty('--font-size', getState().settings.fontSize + 'px');
   if (!getState().notes.length) {
     await createNote(t('welcome'));

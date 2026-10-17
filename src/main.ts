@@ -176,6 +176,7 @@ function buildShell() {
       <button class="iconbtn" id="btnImportRoam" title="Import Roam JSON">Roam</button>
       <button class="iconbtn" id="btnTrash" title="${t('trash')}">🗑 ${t('trash')}</button>
       <button class="iconbtn" id="btnShareHtml" title="${t('shareHtml')}">🌐 ${t('shareHtml')}</button>
+      <button class="iconbtn" id="btnWeekly" title="${t('weeklyReport')}">📊 ${t('weeklyReport')}</button>
     </div>
   `;
 
@@ -323,6 +324,7 @@ function bindEvents() {
   });
   document.getElementById('btnTrash')!.addEventListener('click', () => openTrashModal());
   document.getElementById('btnShareHtml')!.addEventListener('click', () => { void exportCurrentNoteHtml(); });
+  document.getElementById('btnWeekly')!.addEventListener('click', () => { void openWeeklyReport(); });
   document.getElementById('btnBacklinks')!.addEventListener('click', () => toggleSidePanel());
   document.getElementById('closeSidePanel')!.addEventListener('click', () => toggleSidePanel());
   document.getElementById('btnGraph')!.addEventListener('click', () => showGraph());
@@ -922,6 +924,65 @@ function renderNoteList() {
 
 function escapeHtml(s: string) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// ---- Haftalık rapor ----
+function isoWeek(d: Date): { year: number; week: number; monday: Date } {
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = date.getUTCDay() || 7; // Pzt=1..Paz=7
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum); // haftanın Perşembesi
+  const year = date.getUTCFullYear();
+  const yearStart = new Date(Date.UTC(year, 0, 1));
+  const week = Math.ceil(((date.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  const monday = new Date(date);
+  monday.setUTCDate(monday.getUTCDate() - 3); // Perşembe -3 = Pazartesi
+  return { year, week, monday };
+}
+
+async function openWeeklyReport() {
+  const now = new Date();
+  const { year, week, monday } = isoWeek(now);
+  const title = `${t('weeklyReport')} ${year}-W${String(week).padStart(2, '0')}`;
+  const existing = findNoteByTitle(title);
+  if (existing) { setActive(existing.id); renderAll(); return; }
+  const sunday = new Date(monday); sunday.setDate(sunday.getDate() + 6);
+  const fmt = (d: Date) => d.toLocaleDateString(getState().settings.language === 'tr' ? 'tr-TR' : 'en-GB', { day: 'numeric', month: 'short' });
+  const notes = getState().notes
+    .filter((x) => !x.deletedAt && x.updatedAt >= monday.getTime() && x.title !== title)
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, 40);
+  // görev taraması (tasks modal ile aynı desenler)
+  const active: { text: string; state: string; note: string }[] = [];
+  const done: { text: string; note: string }[] = [];
+  for (const note of getState().notes) {
+    if (note.deletedAt || note.locked) continue;
+    for (const line of note.content.split('\n')) {
+      const m = line.match(/^[\t ]*[-*+] \[([ xX])\] (.+)$/);
+      if (m) { if (m[1].toLowerCase() === 'x') done.push({ text: m[2].trim(), note: note.title }); continue; }
+      const ls = line.match(/^[\t ]*(?:[-*+]\s+)?\s*(NOW|DOING|TODO|LATER)\s+(.+)$/i);
+      if (ls) active.push({ text: ls[2].trim(), state: ls[1].toUpperCase(), note: note.title });
+    }
+  }
+  const lines: string[] = [];
+  lines.push(`# ${title}`);
+  lines.push(`> 📅 ${fmt(monday)} → ${fmt(sunday)}`);
+  lines.push('');
+  lines.push(`## 📝 ${t('reportWritten')} (${notes.length})`);
+  if (notes.length) for (const n of notes) lines.push(`- [[${n.title}]] — ${fmt(new Date(n.updatedAt))}`);
+  else lines.push(`*—*`);
+  lines.push('');
+  lines.push(`## ✅ ${t('reportTasks')}`);
+  lines.push(`### ${t('reportActive')} (${active.length})`);
+  if (active.length) for (const a of active.slice(0, 30)) lines.push(`- ${a.state} ${a.text} *([[${a.note}]])*`);
+  else lines.push(`*—*`);
+  lines.push(`### ${t('reportCompleted')} (${done.length})`);
+  if (done.length) for (const d of done.slice(0, 30)) lines.push(`- [x] ${d.text} *([[${d.note}]])*`);
+  else lines.push(`*—*`);
+  lines.push('');
+  lines.push(`*🕐 ${new Date().toLocaleString()}*`);
+  const note = await createNote(title);
+  await updateNote(note.id, { content: lines.join('\n') });
+  renderAll();
 }
 
 // ---- Tek dosya HTML paylaşımı ----

@@ -10,6 +10,7 @@ import { getVaultHandle, ensureVaultPermission, saveImageToVault, uniqueVaultPat
 import { initWhisperLocal, transcribeBlob, whisperReadyFor, whisperCached, whisperSupported, deleteWhisperModel, WHISPER_MODELS as WHISPER_MODEL_META } from './voice';
 import { encryptText, decryptText } from './secure';
 import { startAmbient, stopAmbient, setAmbientVolume, ambientOn } from './ambient';
+import { mountCat, catPoke, catAutoWiggle, catEnabled, setCatEnabled, setCatSkin, setCatSound, catKeywordReaction, catSay, CAT_SKINS } from './cat';
 
 const LOCKED_PLACEHOLDER = '[🔒 Encrypted — Cat Jam]';
 
@@ -92,6 +93,11 @@ let voiceEngine: 'webspeech' | 'whisper' = 'webspeech';
 let whisperModelKey: 'tiny' | 'base' | 'small' = 'base';
 let editorFontProfile: 'sans' | 'serif' | 'mono' = 'mono';
 let customCss = '';
+
+// cat ayarları hızlı yardımcıları
+function isTr(): boolean { return getState().settings.language === 'tr'; }
+function catSkinCurrent(): string { return localStorage.getItem('catjam:catskin') || 'orange'; }
+function catSoundCurrent(): boolean { return localStorage.getItem('catjam:catsound') !== '0'; }
 
 function applyCustomCss(css: string) {
   let el = document.getElementById('catjamCustomCss') as HTMLStyleElement | null;
@@ -265,74 +271,8 @@ function buildShell() {
   voiceStatus.id = 'voiceStatus';
   document.body.appendChild(voiceStatus);
 
-  buildCat();
+  mountCat();
   bindEvents();
-}
-
-// ---- 🐱 Kedi maskot ----
-function isCatEnabled(): boolean {
-  return localStorage.getItem('catjam:cat') !== '0';
-}
-
-function buildCat() {
-  document.getElementById('catMascot')?.remove();
-  if (!isCatEnabled()) return;
-  const cat = document.createElement('button');
-  cat.id = 'catMascot';
-  cat.title = t('catMascot');
-  cat.innerHTML = `
-    <div id="catBubble"></div>
-    <svg width="46" height="46" viewBox="0 0 46 46" aria-hidden="true">
-      <g class="cat-tail"><path d="M33 33 Q 41 33 41 24" fill="none" stroke="var(--accent)" stroke-width="3.4" stroke-linecap="round"/></g>
-      <ellipse cx="23" cy="31.5" rx="11.5" ry="8.5" fill="var(--accent)"/>
-      <circle cx="23" cy="17" r="9.5" fill="var(--accent)"/>
-      <path d="M15.4 12.5 L14 4.5 L20.8 9.5 Z" fill="var(--accent)"/>
-      <path d="M30.6 12.5 L32 4.5 L25.2 9.5 Z" fill="var(--accent)"/>
-      <circle cx="19.6" cy="16.4" r="1.4" fill="var(--bg)"/>
-      <circle cx="26.4" cy="16.4" r="1.4" fill="var(--bg)"/>
-      <path d="M21.6 20 L24.4 20 L23 22.2 Z" fill="var(--bg)"/>
-      <g stroke="var(--bg)" stroke-width="0.9" opacity="0.85">
-        <line x1="13.5" y1="18.5" x2="7.5" y2="16.5"/>
-        <line x1="13.5" y1="20.5" x2="7.5" y2="22.5"/>
-        <line x1="32.5" y1="18.5" x2="38.5" y2="16.5"/>
-        <line x1="32.5" y1="20.5" x2="38.5" y2="22.5"/>
-      </g>
-    </svg>`;
-  cat.addEventListener('click', () => {
-    const bubble = cat.querySelector('#catBubble') as HTMLDivElement;
-    const quips = tr() ? CAT_QUIPS_TR : CAT_QUIPS_EN;
-    bubble.textContent = quips[Math.floor(Math.random() * quips.length)];
-    cat.classList.add('talking');
-    setTimeout(() => cat.classList.remove('talking'), 700);
-    setTimeout(() => bubble.classList.add('show'), 250);
-    clearTimeout(catBubbleTimer);
-    catBubbleTimer = setTimeout(() => bubble.classList.remove('show'), 2800);
-  });
-  document.body.appendChild(cat);
-}
-
-let catBubbleTimer: any = null;
-const CAT_QUIPS_TR = ['Miyav!', 'Pur pur… 😺', 'Notlar kayıtlı, minnettarım.', 'Bugün ne yazacağız?', 'Bana mama, sana ilham.', 'Balansak? Hayır, dashboard!', 'Kafein + kedi = nil'];
-const CAT_QUIPS_EN = ['Meow!', 'Purrr… 😺', 'Notes saved — you\'re welcome.', 'What are we writing today?', 'Catnip and coffee time.', 'I archived a hairball. Zero bugs.', 'Purr productivity!'];
-
-function tr(): boolean { return getState().settings.language === 'tr'; }
-
-let lastCatWiggle = 0;
-function catAutoWiggle() {
-  const now = Date.now();
-  if (now - lastCatWiggle < 4000) return;
-  lastCatWiggle = now;
-  catPoke('wiggle');
-}
-
-function catPoke(kind: 'wiggle' | 'happy' = 'wiggle') {
-  if (!isCatEnabled()) return;
-  const cat = document.getElementById('catMascot');
-  if (!cat) return;
-  cat.classList.remove('wiggle', 'happy');
-  void (cat as HTMLElement).offsetWidth; // restart animation
-  cat.classList.add(kind);
-  setTimeout(() => cat.classList.remove(kind), 900);
 }
 
 let graphAnimId: number | null = null;
@@ -460,7 +400,15 @@ function bindEvents() {
     const n = getActiveNote(); if (!n) return;
     if (editorTextarea.readOnly) return; // kilitli not: DB'ye plaintext yazılmaz
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => updateNote(n.id, { content: editorTextarea.value }), 500);
+    const beforeWords = countWords(n.content);
+    const noteId = n.id;
+    saveTimer = setTimeout(async () => {
+      await updateNote(noteId, { content: editorTextarea.value });
+      catKeywordReaction(editorTextarea.value);
+      const delta = countWords(editorTextarea.value) - beforeWords;
+      if (delta > 0) trackDailyWords(delta);
+      maybeCelebrateGoal();
+    }, 500);
     updatePreview(editorTextarea.value);
     updateSuggestions();
   });
@@ -994,6 +942,43 @@ function renderNoteList() {
 
 function escapeHtml(s: string) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// ---- 📊 Kelime istatistik altyapısı (günlük sayaç localStorage'da) ----
+function countWords(s: string): number {
+  return s.trim() ? s.trim().split(/\s+/).length : 0;
+}
+function todayKey(): string { return new Date().toISOString().slice(0, 10); }
+function dayWords(): Record<string, number> {
+  try { return JSON.parse(localStorage.getItem('catjam:daywords') || '{}'); } catch { return {}; }
+}
+function trackDailyWords(delta: number) {
+  if (delta <= 0) return;
+  const dw = dayWords();
+  const k = todayKey();
+  dw[k] = (dw[k] || 0) + delta;
+  // 400 günden eski kayıtları budala
+  const cutoff = Date.now() - 400 * 86400000;
+  for (const key of Object.keys(dw)) {
+    const t = new Date(key + 'T00:00:00Z').getTime();
+    if (!isNaN(t) && t < cutoff) delete dw[key];
+  }
+  try { localStorage.setItem('catjam:daywords', JSON.stringify(dw)); } catch { /* kota */ }
+}
+function dailyGoal(): number {
+  const g = Number(localStorage.getItem('catjam:goal') || '300');
+  return g >= 50 ? g : 300;
+}
+function maybeCelebrateGoal() {
+  const words = dayWords()[todayKey()] || 0;
+  if (words < dailyGoal()) return;
+  if (localStorage.getItem('catjam:goaltoday') === todayKey()) return;
+  localStorage.setItem('catjam:goaltoday', todayKey());
+  const pct = Math.round((words / dailyGoal()) * 100);
+  catSay(isTr()
+    ? `Bugün ${words} kelime — hedef %{${pct}} tamam! 🎉 Miyav!`
+    : `${words} words today — goal ${pct}% done! 🎉 Meow!`, 5200);
+  catPoke('happy');
 }
 
 // ---- Haftalık rapor ----
@@ -1662,9 +1647,24 @@ function openSettings() {
     <div style="margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:12px;">
       <div style="font-size:13px;color:var(--text-muted);">🐱 ${t('catMascot')}</div>
       <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text);cursor:pointer;white-space:nowrap;">
-        <input type="checkbox" id="catMascotToggle" ${isCatEnabled() ? 'checked' : ''} />
-        <span style="font-size:12px;color:var(--text-muted);">${isCatEnabled() ? t('catOn') : t('catOff')}</span>
+        <input type="checkbox" id="catMascotToggle" ${catEnabled() ? 'checked' : ''} />
+        <span style="font-size:12px;color:var(--text-muted);">${catEnabled() ? t('catOn') : t('catOff')}</span>
       </label>
+    </div>
+    <div id="catExtras" style="margin-bottom:12px;display:${catEnabled() ? 'block' : 'none'};">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px;">
+        <div style="font-size:13px;color:var(--text-muted);">🎨 ${t('catSkins')}</div>
+        <select id="catSkinSelect" class="search-input" style="width:150px;">
+          ${CAT_SKINS.map((s) => `<option value="${s.id}" ${catSkinCurrent() === s.id ? 'selected' : ''}>${isTr() ? s.labelTr : s.labelEn}</option>`).join('')}
+        </select>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+        <div style="font-size:13px;color:var(--text-muted);">🔊 ${t('catSound')}</div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text);cursor:pointer;white-space:nowrap;">
+          <input type="checkbox" id="catSoundToggle" ${catSoundCurrent() ? 'checked' : ''} />
+          <span style="font-size:12px;color:var(--text-muted);">${catSoundCurrent() ? t('catOn') : t('catOff')}</span>
+        </label>
+      </div>
     </div>
     <div style="margin-bottom:12px;">
       <div style="font-size:13px;color:var(--text-muted);margin-bottom:6px;">${t('writeProfile')}</div>
@@ -1738,11 +1738,24 @@ function openSettings() {
   const range = modal.querySelector('#fontSizeRange') as HTMLInputElement;
   // 🐱 maskot aç/kapa
   const catToggle = modal.querySelector('#catMascotToggle') as HTMLInputElement | null;
+  const catExtras = modal.querySelector('#catExtras') as HTMLDivElement | null;
   catToggle?.addEventListener('change', () => {
     localStorage.setItem('catjam:cat', catToggle.checked ? '1' : '0');
     (modal.querySelector('#catMascotToggle')!.closest('label')!.querySelector('span') as HTMLSpanElement).textContent = catToggle.checked ? t('catOn') : t('catOff');
-    buildCat();
+    setCatEnabled(catToggle.checked);
+    if (catExtras) catExtras.style.display = catToggle.checked ? 'block' : 'none';
     if (catToggle.checked) catPoke('happy');
+  });
+  const catSoundToggle = modal.querySelector('#catSoundToggle') as HTMLInputElement | null;
+  catSoundToggle?.addEventListener('change', () => {
+    setCatSound(catSoundToggle.checked);
+    (modal.querySelector('#catSoundToggle')!.closest('label')!.querySelector('span') as HTMLSpanElement).textContent = catSoundToggle.checked ? t('catOn') : t('catOff');
+    if (catSoundToggle.checked) catSay('Miyav! 🔊');
+  });
+  const catSkinSelect = modal.querySelector('#catSkinSelect') as HTMLSelectElement | null;
+  catSkinSelect?.addEventListener('change', () => {
+    setCatSkin(catSkinSelect.value);
+    catPoke('happy');
   });
   const label = modal.querySelector('#fontSizeLabel') as HTMLSpanElement;
   range.addEventListener('input', () => {
@@ -2602,6 +2615,15 @@ function fuzzyScore(text: string, query: string): number {
 }
 
 async function main() {
+  // 🐱 kedi → not açma ve pomodoro bitiş köprüsü
+  window.addEventListener('catjam:opennote', (e) => {
+    const id = (e as CustomEvent).detail?.id as string;
+    const note = getState().notes.find((n) => n.id === id && !n.deletedAt);
+    if (!note) return;
+    setActive(note.id);
+    renderAll();
+  });
+  window.addEventListener('catjam:pomo-done', () => showToast('🍅 ' + t('pomoDone')));
   buildShell();
   await initStore();
   try {

@@ -95,10 +95,10 @@ button:active { transform: translateY(0.5px); }
 /* --- 🐱 Kedi maskot --- */
 #catMascot {
   position: fixed; right: 16px; bottom: 16px; z-index: 995;
-  width: 48px; height: 48px; border: none; padding: 0;
+  width: 58px; height: 58px; border: none; padding: 0;
   background: transparent; border-radius: 50%;
   cursor: pointer; filter: drop-shadow(0 4px 10px rgba(0,0,0,.25));
-  transition: transform .18s ease;
+  transition: transform .18s ease, right .95s ease-in-out, bottom .95s ease-in-out;
 }
 #catMascot:hover { transform: translateY(-3px) scale(1.06); }
 #catMascot:active { transform: scale(.92); }
@@ -109,9 +109,60 @@ body.focus-mode #catMascot { display: none; }
 #catMascot.wiggle svg { animation: catBounce .6s ease; }
 #catMascot.happy svg { animation: catBounce .7s ease 2; }
 #catMascot.happy .cat-tail { animation: catTailFast .5s ease-in-out 3; transform-origin: 33px 33px; }
+#catMascot.walk .cat-tail { animation: catTailFast .45s ease-in-out 4; transform-origin: 33px 33px; }
+#catMascot.walk svg { animation: catWalk .95s ease-in-out; }
+#catMascot.chase svg { animation: catChase .34s ease-in-out 2; }
+#catMascot.petting svg { animation: catPurr .22s ease-in-out infinite; }
+#catMascot .cat-zz {
+  position: absolute; top: -2px; right: -6px; display: none;
+  font-size: 11px; color: var(--text-muted); opacity: .85; white-space: pre;
+  animation: catZz 2.6s ease-in-out infinite; font-family: var(--sans);
+}
+#catMascot.mood-sleep .cat-zz { display: block; }
+@keyframes catZz { 0%,100% { transform: translateY(0); opacity: .5; } 50% { transform: translateY(-5px); opacity: 1; } }
+/* ruh hâlleri */
+#catMascot .cat-lid, #catMascot .cat-joy { display: none; }
+#catMascot.mood-sleep .cat-eyes { display: none; }
+#catMascot.mood-sleep .cat-lid { display: inline; }
+#catMascot.mood-happy .cat-eyes { display: none; }
+#catMascot.mood-happy .cat-joy { display: inline; }
+#catMascot.mood-lazy .cat-eye { transform: scaleY(.55); transform-box: fill-box; transform-origin: center; }
+#catMascot.blink .cat-eye { transform: scaleY(.12); transform-box: fill-box; transform-origin: center; }
+@keyframes catWalk { 0%,100% { transform: translateX(0) rotate(0); } 25% { transform: translateX(-2px) rotate(-3deg); } 75% { transform: translateX(2px) rotate(2deg); } }
+@keyframes catChase { 0%,100% { transform: translate(0,0); } 50% { transform: translate(3px,-4px) rotate(4deg); } }
+@keyframes catPurr { 0%,100% { transform: translate(0,0); } 50% { transform: translate(0,-1.6px) scale(1.03); } }
+/* aksesuvarlar: varsayılan gizli, seviye sınıflarında görünür */
+#catMascot .acc-collar, #catMascot .acc-bow, #catMascot .acc-hat,
+#catMascot .acc-glasses, #catMascot .acc-crown { display: none; }
+#catMascot.acc-2 .acc-collar { display: inline; }
+#catMascot.acc-3 .acc-bow { display: inline; }
+#catMascot.acc-4 .acc-hat { display: inline; }
+#catMascot.acc-5 .acc-glasses { display: inline; }
+#catMascot.acc-6 .acc-crown { display: inline; }
+/* renk ciltleri */
+#catMascot.cat-skin-orange { --cat-fur: #f3a548; --cat-inner: #f8b4a0; --cat-eye-bg: #fff3da; --cat-pupil: #221c14; --cat-line: #5a3d1a; --cat-patch: transparent; }
+#catMascot.cat-skin-gray { --cat-fur: #9aa2ad; --cat-inner: #f0c0cb; --cat-eye-bg: #eaf2ff; --cat-pupil: #23272e; --cat-line: #3c4450; --cat-patch: transparent; }
+#catMascot.cat-skin-black { --cat-fur: #2e2e33; --cat-inner: #d38ea3; --cat-eye-bg: #ffe29a; --cat-pupil: #1a1a1a; --cat-line: #d9d4cc; --cat-patch: transparent; }
+#catMascot.cat-skin-white { --cat-fur: #f5f3ee; --cat-inner: #f5b8c4; --cat-eye-bg: #dff2e4; --cat-pupil: #28513d; --cat-line: #8a8578; --cat-patch: transparent; }
+#catMascot.cat-skin-calico { --cat-fur: #f0ead2; --cat-inner: #f2a48d; --cat-eye-bg: #ffe9a0; --cat-pupil: #4a3418; --cat-line: #6b6350; --cat-patch: #e8a04c; }
+#catMascot.cat-skin-calico .patch { display: inline; }
+#catMascot:not(.cat-skin-calico) .patch { display: none; }
+/* okşama kalpleri */
+.pet-heart {
+  position: absolute; top: 6px; pointer-events: none;
+  font-size: 14px; animation: petHeart 1s ease-out forwards;
+}
+@keyframes petHeart { 0% { transform: translateY(0) scale(.6); opacity: 0; } 20% { opacity: 1; } 100% { transform: translateY(-34px) scale(1.25); opacity: 0; } }
+/* pomodoro çipi */
+#catPomoChip {
+  position: absolute; bottom: 100%; right: 0; margin-bottom: 6px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  padding: 5px 10px; font-size: 12.5px; color: var(--text); font-family: var(--mono);
+  box-shadow: var(--shadow); white-space: nowrap; cursor: pointer;
+}
 #catBubble {
-  position: absolute; bottom: 52px; right: 4px;
-  min-width: 120px; max-width: 200px;
+  position: absolute; bottom: 62px; right: -2px;
+  min-width: 120px; max-width: 210px;
   background: var(--panel); color: var(--text); border: 1px solid var(--border);
   border-radius: 12px 12px 2px 12px; padding: 8px 11px;
   font-size: 12.5px; line-height: 1.45; text-align: left;
@@ -119,6 +170,29 @@ body.focus-mode #catMascot { display: none; }
   transition: opacity .22s ease, transform .22s ease; pointer-events: none;
 }
 #catBubble.show { opacity: 1; transform: translateY(0) scale(1); }
+#catBubble .cat-note-btn {
+  width: 100%; text-align: left; background: var(--accent-soft); color: var(--accent);
+  border: 1px solid var(--accent); border-radius: 8px; padding: 5px 9px;
+  font-size: 12.5px; font-weight: 600; cursor: pointer; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+#catBubble .cat-note-btn:hover { background: var(--accent); color: #fff; }
+
+/* mini kedi paneli */
+#catPanel {
+  position: fixed; right: 14px; bottom: 82px; z-index: 1003;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  padding: 14px; width: 250px; box-shadow: var(--shadow);
+  animation: popIn .16s ease;
+}
+/* lazer noktası */
+#laserDot {
+  position: fixed; z-index: 994; width: 14px; height: 14px; border-radius: 50%;
+  transform: translate(-50%, -50%); pointer-events: none;
+  background: radial-gradient(circle, rgba(255,0,0,.95) 0%, rgba(255,0,0,.35) 55%, transparent 70%);
+  box-shadow: 0 0 12px 4px rgba(255, 30, 30, .45);
+  transition: left .58s ease-in-out, top .58s ease-in-out;
+}
 @keyframes catTail { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-14deg); } }
 @keyframes catTailFast { 0%, 100% { transform: rotate(0deg); } 25% { transform: rotate(18deg); } 75% { transform: rotate(-20deg); } }
 @keyframes catBounce { 0%, 100% { transform: translateY(0); } 35% { transform: translateY(-7px); } 65% { transform: translateY(0); } }
